@@ -1,0 +1,80 @@
+{
+  "entities": {
+    "Project": {
+      "title": "Project",
+      "description": "A project record with financial and implementation details.",
+      "type": "object",
+      "properties": {
+        "projectNumber": { "type": "string", "description": "Sequential project ID (e.g., R26001)." },
+        "client": { "type": "string", "description": "Name of the client." },
+        "date": { "type": "string", "description": "Date of the project (MMDD)." },
+        "year": { "type": "integer", "description": "The fiscal year of the project (2023-2060)." },
+        "service": { "type": "string", "description": "Comma-separated list of services." },
+        "status": { "type": "string", "description": "Current status of the project." },
+        "netAmount": { "type": "number", "description": "Tax-excluded amount." },
+        "taxAmount": { "type": "number", "description": "Tax amount (5%)." },
+        "totalAmount": { "type": "number", "description": "Total amount (Net + Tax)." },
+        "salesRep": { "type": "string", "description": "Sales representative name." },
+        "implementers": { "type": "object", "description": "Map of implementer names to their contribution and allocated amount." },
+        "outsourcedStaff": { "type": "string", "description": "Name of outsourced personnel." },
+        "outsourcedAmount": { "type": "number", "description": "Amount paid to outsourced personnel." },
+        "projectProgress": { "type": "string", "description": "Progress update text." },
+        "isInvoiceIssued": { "type": "string", "description": "Whether an invoice has been issued (是/否)." },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "uid": { "type": "string", "description": "User ID of the creator." }
+      },
+      "required": ["projectNumber", "client", "netAmount", "year", "uid"]
+    },
+    "Expense": {
+      "title": "Expense",
+      "description": "An expense or procurement record.",
+      "type": "object",
+      "properties": {
+        "date": { "type": "string", "description": "Date of the expense (MMDD)." },
+        "year": { "type": "integer", "description": "The fiscal year of the expense (2023-2060)." },
+        "category": { "type": "string", "description": "Expense category." },
+        "summary": { "type": "string", "description": "Description of the expense." },
+        "payer": { "type": "string", "description": "Person who paid for the expense." },
+        "total": { "type": "number", "description": "Total expense amount." },
+        "status": { "type": "string", "description": "Approval status." },
+        "invoice": { "type": "string", "description": "Whether a receipt/invoice exists (有/無)." },
+        "isInvoiceIssued": { "type": "string", "description": "Whether an invoice has been issued (是/否)." },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "uid": { "type": "string", "description": "User ID of the creator." }
+      },
+      "required": ["category", "total", "year", "uid"]
+    },
+    "Asset": {
+      "title": "Asset",
+      "description": "A company asset with depreciation tracking.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "description": "Name of the asset." },
+        "purchaseDate": { "type": "string", "description": "Date of purchase (YYYY-MM-DD)." },
+        "year": { "type": "integer", "description": "The fiscal year of the asset acquisition." },
+        "cost": { "type": "number", "description": "Original cost of the asset." },
+        "usefulLife": { "type": "integer", "description": "Useful life in years." },
+        "residualValue": { "type": "number", "description": "Estimated residual value at the end of useful life." },
+        "category": { "type": "string", "description": "Asset category (e.g., Equipment, Software)." },
+        "status": { "type": "string", "description": "Current status (Active, Disposed)." },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "uid": { "type": "string", "description": "User ID of the creator." }
+      },
+      "required": ["name", "cost", "usefulLife", "year", "uid"]
+    }
+  },
+  "firestore": {
+    "/projects/{projectId}": {
+      "schema": "Project",
+      "description": "Collection of project records."
+    },
+    "/expenses/{expenseId}": {
+      "schema": "Expense",
+      "description": "Collection of expense records."
+    },
+    "/assets/{assetId}": {
+      "schema": "Asset",
+      "description": "Collection of asset records."
+    }
+  }
+}

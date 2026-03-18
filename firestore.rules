@@ -1,0 +1,106 @@
+// ===============================================================
+// Assumed Data Model
+// ===============================================================
+//
+// Collection: projects
+// Fields: projectNumber, client, date, year, service, status, netAmount, taxAmount, totalAmount, salesRep, implementers, outsourcedStaff, outsourcedAmount, projectProgress, isInvoiceIssued, createdAt, uid
+//
+// Collection: expenses
+// Fields: date, year, category, summary, payer, total, status, invoice, isInvoiceIssued, createdAt, uid
+//
+// Collection: assets
+// Fields: name, purchaseDate, year, cost, usefulLife, residualValue, category, status, createdAt, uid
+//
+// Collection: taxDeductions
+// Fields: year, values, uid
+//
+// ===============================================================
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Helper Functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+    
+    function isDocOwner() {
+      return isAuthenticated() && request.auth.uid == resource.data.uid;
+    }
+    
+    function uidUnchanged() {
+      return !('uid' in request.resource.data) || request.resource.data.uid == request.auth.uid;
+    }
+    
+    function uidNotModified() {
+      return !('uid' in request.resource.data) || request.resource.data.uid == resource.data.uid;
+    }
+
+    function hasOnlyAllowedFields(fields) {
+      return request.resource.data.keys().hasOnly(fields);
+    }
+
+    // Domain Validators
+    function isValidProject(data) {
+      return data.projectNumber is string && data.projectNumber.size() > 0 && data.projectNumber.size() < 50 &&
+             data.client is string && data.client.size() > 0 && data.client.size() < 100 &&
+             data.netAmount is number && data.netAmount >= 0 &&
+             data.year is int && data.year >= 2023 && data.year <= 2060;
+    }
+
+    function isValidExpense(data) {
+      return data.category is string && data.category.size() > 0 &&
+             data.total is number && data.total >= 0 &&
+             data.year is int && data.year >= 2023 && data.year <= 2060;
+    }
+
+    function isValidAsset(data) {
+      return data.name is string && data.name.size() > 0 &&
+             data.cost is number && data.cost >= 0 &&
+             data.usefulLife is int && data.usefulLife > 0 &&
+             data.year is int && data.year >= 2023 && data.year <= 2060;
+    }
+
+    function isValidTaxDeduction(data) {
+      return data.year is int && data.year >= 2023 && data.year <= 2060 &&
+             data.values is map && data.uid is string;
+    }
+
+    // Rules
+    match /projects/{projectId} {
+      allow read: if isAuthenticated(); // Allow all authenticated users to read for dashboard summary
+      allow create: if isAuthenticated() && uidUnchanged() && isValidProject(request.resource.data);
+      allow update: if isAuthenticated() && uidNotModified() && isValidProject(request.resource.data);
+      allow delete: if isAuthenticated();
+    }
+
+    match /expenses/{expenseId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && uidUnchanged() && isValidExpense(request.resource.data);
+      allow update: if isAuthenticated() && uidNotModified() && isValidExpense(request.resource.data);
+      allow delete: if isAuthenticated();
+    }
+
+    match /assets/{assetId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && uidUnchanged() && isValidAsset(request.resource.data);
+      allow update: if isAuthenticated() && uidNotModified() && isValidAsset(request.resource.data);
+      allow delete: if isAuthenticated();
+    }
+
+    match /taxDeductions/{taxId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && uidUnchanged() && isValidTaxDeduction(request.resource.data);
+      allow update: if isAuthenticated() && uidNotModified() && isValidTaxDeduction(request.resource.data);
+      allow delete: if isAuthenticated();
+    }
+
+    match /test/connection {
+      allow read: if isAuthenticated();
+    }
+  }
+}
