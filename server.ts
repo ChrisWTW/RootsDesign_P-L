@@ -4,8 +4,14 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { google } from "googleapis";
 import dotenv from "dotenv";
+import fs from "fs";
 
+// Load .env first, then override with .env.local where applicable
 dotenv.config();
+if (fs.existsSync(".env.local")) {
+  const localEnv = dotenv.parse(fs.readFileSync(".env.local"));
+  for (const k in localEnv) process.env[k] = localEnv[k];
+}
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -16,10 +22,11 @@ async function startServer() {
 
   app.use(express.json());
 
+  const baseUrl = process.env.APP_URL || `http://localhost:${PORT}`;
   const oauth2Client = new google.auth.OAuth2(
     process.env.GOOGLE_CLIENT_ID,
     process.env.GOOGLE_CLIENT_SECRET,
-    `${process.env.APP_URL}/auth/google/callback`
+    `${baseUrl}/auth/google/callback`
   );
 
   if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET) {
