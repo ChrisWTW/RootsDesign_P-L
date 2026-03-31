@@ -1732,7 +1732,13 @@ export default function App() {
                   >
                     <Download size={16} />
                   </button>
-
+                  <button 
+                    onClick={() => auth.signOut()}
+                    className="w-9 h-9 rounded-full bg-rose-500 flex items-center justify-center text-white shadow-sm"
+                    title="登出系統"
+                  >
+                    <LogOut size={16} />
+                  </button>
                 </div>
               )}
             </div>
