@@ -230,9 +230,15 @@ export default function App() {
   const handleLogin = async () => {
     try {
       await signInWithPopup(auth, googleProvider);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Login failed', error);
-      alert('登入失敗，請稍後重試。');
+      let errMsg = error?.message || '未知錯誤';
+      if (error?.code === 'auth/unauthorized-domain') {
+        errMsg = '未經授權的網域！請確保在 Firebase Console 的「Authentication -> Settings -> Authorized domains」中加入您目前的網址 (例如 127.0.0.1 或 github.io 網域)，或嘗試使用 localhost。';
+      } else if (error?.code === 'auth/popup-closed-by-user') {
+        errMsg = '彈出視窗已關閉。請確認沒有被瀏覽器阻擋，或重新點擊登入。';
+      }
+      alert('登入失敗: ' + errMsg);
     }
   };
 
@@ -1646,7 +1652,7 @@ export default function App() {
             </div>
           ) : (
             <button 
-              onClick={() => signInWithPopup(auth, googleProvider)}
+              onClick={handleLogin}
               className="w-full flex items-center justify-center space-x-3 bg-black text-white p-4 rounded-2xl hover:scale-105 transition-transform shadow-lg"
             >
               <LogIn size={20} />
