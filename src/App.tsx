@@ -227,8 +227,14 @@ export default function App() {
   const [editingExpense, setEditingExpense] = useState<any>(null);
   const [editingAsset, setEditingAsset] = useState<any>(null);
 
-  // Google Drive Tokens
-  const [driveTokens, setDriveTokens] = useState<any>(null);
+  const handleLogin = async () => {
+    try {
+      await signInWithPopup(auth, googleProvider);
+    } catch (error) {
+      console.error('Login failed', error);
+      alert('登入失敗，請稍後重試。');
+    }
+  };
 
   // Firebase Auth Listener
   useEffect(() => {
@@ -931,76 +937,7 @@ export default function App() {
     document.body.removeChild(link);
   };
 
-  // --- Google Drive Export ---
-  const handleExportToDrive = async () => {
-    if (!user) {
-      alert('請先登入系統');
-      return;
-    }
 
-    let tokens = driveTokens;
-    if (!tokens) {
-      try {
-        const response = await fetch('/api/auth/google/url');
-        if (!response.ok) throw new Error('無法獲取認證網址');
-        const { url } = await response.json();
-        
-        // Open popup for Google Auth
-        const authWindow = window.open(url, 'google_auth', 'width=600,height=700');
-        
-        const handleMessage = async (event: MessageEvent) => {
-          // Validate origin
-          if (!event.origin.includes(window.location.hostname) && !event.origin.includes('run.app')) {
-            // In development, origin might be different, but we check for common patterns
-          }
-
-          if (event.data?.type === 'GOOGLE_AUTH_SUCCESS') {
-            const newTokens = event.data.tokens;
-            setDriveTokens(newTokens);
-            window.removeEventListener('message', handleMessage);
-            // Perform export with new tokens
-            await performExport(newTokens);
-          }
-        };
-        window.addEventListener('message', handleMessage);
-        return;
-      } catch (error) {
-        console.error('Failed to initiate Google Auth:', error);
-        alert('無法啟動 Google 認證，請確認瀏覽器未封鎖彈出視窗');
-        return;
-      }
-    }
-
-    await performExport(tokens);
-  };
-
-  const performExport = async (tokens: any) => {
-    const csvContent = generateCSV();
-
-    try {
-      const response = await fetch('/api/export/drive', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          tokens,
-          filename: `源創系統_${selectedYear}_年度報表.csv`,
-          content: csvContent,
-          mimeType: 'text/csv'
-        })
-      });
-      const result = await response.json();
-      if (result.success) {
-        alert(`報表已成功匯出至 Google 雲端硬碟！\n檔案連結：${result.link}`);
-      } else {
-        throw new Error(result.error);
-      }
-    } catch (error) {
-      console.error('Export failed:', error);
-      alert('匯出失敗，請檢查權限或重新登入 Google');
-      setDriveTokens(null); // Clear tokens on error to force re-auth
-    }
-  };
-  
   // --- 畫面元件區 ---
   const DashboardView = () => (
     <div className="space-y-6 md:space-y-10 animate-in fade-in slide-in-from-bottom-4 duration-700">
@@ -1586,6 +1523,53 @@ export default function App() {
     { id: 'financials', name: '財務', icon: PieChart },
   ];
 
+  if (!isAuthReady) {
+    return (
+      <div className="h-screen w-screen flex items-center justify-center bg-slate-50 relative overflow-hidden">
+        <style dangerouslySetInnerHTML={{ __html: customStyles }} />
+        <div className="absolute inset-0 z-0 pointer-events-none">
+          <div className="absolute top-[-10%] left-[-10%] w-[50vw] h-[50vw] rounded-full bg-blue-400/20 mix-blend-multiply filter blur-[100px] animate-blob"></div>
+          <div className="absolute top-[20%] right-[-10%] w-[40vw] h-[40vw] rounded-full bg-rose-300/20 mix-blend-multiply filter blur-[100px] animate-blob animation-delay-2000"></div>
+          <div className="absolute bottom-[-20%] left-[20%] w-[60vw] h-[60vw] rounded-full bg-purple-300/20 mix-blend-multiply filter blur-[100px] animate-blob animation-delay-4000"></div>
+          <div className="absolute inset-0 bg-white/60 backdrop-blur-[4px]"></div>
+        </div>
+        <div className="relative z-10 flex flex-col items-center">
+          <div className="animate-pulse text-2xl font-black text-black tracking-widest uppercase">系統載入中...</div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return (
+      <div className="h-screen w-screen flex justify-center items-center bg-slate-50 relative overflow-hidden font-sans selection:bg-black selection:text-white">
+        <style dangerouslySetInnerHTML={{ __html: customStyles }} />
+        <div className="absolute inset-0 z-0 pointer-events-none">
+          <div className="absolute top-[-10%] left-[-10%] w-[50vw] h-[50vw] rounded-full bg-blue-400/20 mix-blend-multiply filter blur-[100px] animate-blob"></div>
+          <div className="absolute top-[20%] right-[-10%] w-[40vw] h-[40vw] rounded-full bg-rose-300/20 mix-blend-multiply filter blur-[100px] animate-blob animation-delay-2000"></div>
+          <div className="absolute bottom-[-20%] left-[20%] w-[60vw] h-[60vw] rounded-full bg-purple-300/20 mix-blend-multiply filter blur-[100px] animate-blob animation-delay-4000"></div>
+          <div className="absolute inset-0 bg-white/60 backdrop-blur-[4px]"></div>
+        </div>
+        
+        <div className="glass-modal relative z-10 w-full max-w-md p-10 md:p-12 rounded-[2.5rem] flex flex-col items-center shadow-2xl animate-in zoom-in-95 duration-500 m-4">
+          <div className="w-20 h-20 bg-black rounded-3xl flex items-center justify-center text-white font-black text-4xl shadow-xl shadow-black/20 rotate-3 mb-8 hover:rotate-12 transition-transform cursor-default">
+            Y
+          </div>
+          <h1 className="text-3xl font-black tracking-tighter text-black mb-2">源創系統</h1>
+          <p className="text-sm font-bold text-slate-500 mb-10 text-center">登入以管理專案、報支及財務資料</p>
+          
+          <button 
+            onClick={handleLogin}
+            className="w-full flex items-center justify-center space-x-3 bg-black text-white p-4 rounded-2xl hover:scale-105 active:scale-95 transition-all shadow-lg hover:shadow-xl group"
+          >
+            <LogIn size={20} className="group-hover:translate-x-1 transition-transform" />
+            <span className="font-bold text-lg tracking-wide">Google 帳號登入</span>
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <ErrorBoundary>
       <div className="flex flex-col md:flex-row h-screen font-sans relative z-10 text-slate-800 selection:bg-black selection:text-white bg-slate-50 overflow-hidden">
@@ -1657,13 +1641,7 @@ export default function App() {
                   <Download size={14} />
                   <span>下載年度報表 (CSV)</span>
                 </button>
-                <button 
-                  onClick={handleExportToDrive}
-                  className="w-full flex items-center justify-center space-x-2 bg-emerald-500 text-white p-2.5 rounded-xl hover:bg-emerald-600 transition-colors shadow-sm text-xs font-bold"
-                >
-                  <PieChart size={14} />
-                  <span>匯出至 Google 試算表</span>
-                </button>
+
               </div>
             </div>
           ) : (
@@ -1748,13 +1726,7 @@ export default function App() {
                   >
                     <Download size={16} />
                   </button>
-                  <button 
-                    onClick={handleExportToDrive}
-                    className="w-9 h-9 rounded-full bg-emerald-500 flex items-center justify-center text-white shadow-sm"
-                    title="匯出至 Google 試算表"
-                  >
-                    <PieChart size={16} />
-                  </button>
+
                 </div>
               )}
             </div>

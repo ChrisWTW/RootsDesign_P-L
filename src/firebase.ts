@@ -8,5 +8,4 @@ const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
-
-export { signInWithPopup, onAuthStateChanged, collection, doc, setDoc, updateDoc, deleteDoc, onSnapshot, query, where, getDocFromServer };
+export { GoogleAuthProvider, signInWithPopup, onAuthStateChanged, collection, doc, setDoc, updateDoc, deleteDoc, onSnapshot, query, where, getDocFromServer };
