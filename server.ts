@@ -22,8 +22,15 @@ async function startServer() {
     `${process.env.APP_URL}/auth/google/callback`
   );
 
+  if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET) {
+    console.warn("WARNING: GOOGLE_CLIENT_ID or GOOGLE_CLIENT_SECRET is missing. Google Drive export will not work.");
+  }
+
   // Google Auth URL
   app.get("/api/auth/google/url", (req, res) => {
+    if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET) {
+      return res.status(500).json({ error: "Google OAuth credentials are not configured on the server." });
+    }
     const url = oauth2Client.generateAuthUrl({
       access_type: "offline",
       scope: ["https://www.googleapis.com/auth/drive.file"],

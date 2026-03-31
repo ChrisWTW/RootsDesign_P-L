@@ -865,6 +865,72 @@ export default function App() {
     );
   };
 
+  // --- CSV Export ---
+  const generateCSV = () => {
+    const summaryHeaders = ['年度財務摘要', '金額'];
+    const summaryRows = [
+      ['總營業額', financials.revenue],
+      ['未稅金額', financials.salesNet],
+      ['稅金總額', financials.salesTax],
+      ['年度報支總額', financials.expenseTotal],
+      ['年度淨利', financials.netProfit],
+      ['法定盈餘公積', financials.legalReserve],
+      ['可分配股利', financials.distributableDividend],
+      ['', ''],
+      ['業務獎金摘要', ''],
+      ...Object.entries(financials.salesCommissions).map(([name, amount]) => [name, amount]),
+      ['', ''],
+      ['實作貢獻摘要', ''],
+      ...Object.entries(financials.implementationTotals).map(([name, amount]) => [name, amount]),
+      ['', ''],
+      ['', ''],
+    ];
+
+    const projectHeaders = ['案件明細', '', '', '', '', '', '', '', ''];
+    const headers = ['日期', '編號', '客戶', '服務', '未稅金額', '稅金', '總額', '業務', '進度'];
+    const rows = yearFilteredProjects.map(p => [
+      p.date, 
+      p.projectNumber, 
+      p.client, 
+      p.service, 
+      p.netAmount, 
+      p.taxAmount, 
+      p.totalAmount, 
+      p.salesRep, 
+      p.projectProgress
+    ]);
+
+    const csvRows = [
+      ...summaryRows,
+      projectHeaders,
+      headers, 
+      ...rows
+    ].map(row => 
+      row.map(field => {
+        const stringField = String(field || '');
+        if (stringField.includes(',') || stringField.includes('"') || stringField.includes('\n')) {
+          return `"${stringField.replace(/"/g, '""')}"`;
+        }
+        return stringField;
+      }).join(',')
+    );
+
+    return '\uFEFF' + csvRows.join('\n'); // Add BOM for Excel UTF-8 support
+  };
+
+  const handleDownloadCSV = () => {
+    const csvContent = generateCSV();
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `源創系統_${selectedYear}_年度報表.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   // --- Google Drive Export ---
   const handleExportToDrive = async () => {
     if (!user) {
@@ -909,12 +975,7 @@ export default function App() {
   };
 
   const performExport = async (tokens: any) => {
-    const csvContent = [
-      ['日期', '編號', '客戶', '服務', '未稅金額', '稅金', '總額', '業務', '進度'],
-      ...yearFilteredProjects.map(p => [
-        p.date, p.projectNumber, p.client, p.service, p.netAmount, p.taxAmount, p.totalAmount, p.salesRep, p.projectProgress
-      ])
-    ].map(e => e.join(",")).join("\n");
+    const csvContent = generateCSV();
 
     try {
       const response = await fetch('/api/export/drive', {
@@ -1588,13 +1649,22 @@ export default function App() {
                   <LogOut size={16} />
                 </button>
               </div>
-              <button 
-                onClick={handleExportToDrive}
-                className="w-full flex items-center justify-center space-x-2 bg-emerald-500 text-white p-2.5 rounded-xl hover:bg-emerald-600 transition-colors shadow-sm text-xs font-bold"
-              >
-                <Download size={14} />
-                <span>匯出年度報表</span>
-              </button>
+              <div className="space-y-2">
+                <button 
+                  onClick={handleDownloadCSV}
+                  className="w-full flex items-center justify-center space-x-2 bg-slate-800 text-white p-2.5 rounded-xl hover:bg-black transition-colors shadow-sm text-xs font-bold"
+                >
+                  <Download size={14} />
+                  <span>下載年度報表 (CSV)</span>
+                </button>
+                <button 
+                  onClick={handleExportToDrive}
+                  className="w-full flex items-center justify-center space-x-2 bg-emerald-500 text-white p-2.5 rounded-xl hover:bg-emerald-600 transition-colors shadow-sm text-xs font-bold"
+                >
+                  <PieChart size={14} />
+                  <span>匯出至 Google 試算表</span>
+                </button>
+              </div>
             </div>
           ) : (
             <button 
@@ -1670,12 +1740,22 @@ export default function App() {
                 <span className="absolute top-2 right-2 w-2 h-2 bg-red-500 border-2 border-white rounded-full"></span>
               </button>
               {user && (
-                <button 
-                  onClick={handleExportToDrive}
-                  className="md:hidden w-9 h-9 rounded-full bg-emerald-500 flex items-center justify-center text-white shadow-sm"
-                >
-                  <Download size={16} />
-                </button>
+                <div className="md:hidden flex space-x-2">
+                  <button 
+                    onClick={handleDownloadCSV}
+                    className="w-9 h-9 rounded-full bg-slate-800 flex items-center justify-center text-white shadow-sm"
+                    title="下載 CSV"
+                  >
+                    <Download size={16} />
+                  </button>
+                  <button 
+                    onClick={handleExportToDrive}
+                    className="w-9 h-9 rounded-full bg-emerald-500 flex items-center justify-center text-white shadow-sm"
+                    title="匯出至 Google 試算表"
+                  >
+                    <PieChart size={16} />
+                  </button>
+                </div>
               )}
             </div>
           </div>
