@@ -351,11 +351,11 @@ export default function App() {
       const net = Number(p.netAmount) || 0;
       const rep = p.salesRep;
       
-      // 業務獎金: 5% (基本) + 5% (新客戶)
+      // 業務獎金: 5% (基本) + 10% (新客戶)
       if (salesCommissions[rep] !== undefined) {
         salesCommissions[rep] += net * 0.05;
         if (p.isNewClient === '是') {
-          salesCommissions[rep] += net * 0.05;
+          salesCommissions[rep] += net * 0.1;
         }
       }
 
