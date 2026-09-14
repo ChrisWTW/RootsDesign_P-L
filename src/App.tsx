@@ -170,12 +170,12 @@ const TableView = ({ title, buttonText, headers, renderRow, data, onAdd, onRowCl
         <Plus size={18} className="mr-1.5" strokeWidth={3} /> {buttonText}
       </button>
     </div>
-    <div className="overflow-x-auto no-scrollbar p-6">
-      <table className="w-full text-left whitespace-nowrap border-separate border-spacing-y-2">
+    <div className="overflow-x-auto no-scrollbar p-4 md:p-6">
+      <table className="w-full text-left border-separate border-spacing-y-2">
         <thead>
           <tr>
             {headers.map((h: any, i: number) => (
-              <th key={i} className={`px-4 py-3 text-sm font-bold text-slate-400 uppercase tracking-wider ${h.align || ''}`}>
+              <th key={i} className={`px-3 py-3 text-xs md:text-sm font-bold text-slate-400 uppercase tracking-wider ${h.align || ''} ${h.className || ''}`}>
                 {h.label}
               </th>
             ))}
@@ -1316,10 +1316,16 @@ export default function App() {
       onRowClick={(proj: any) => { setEditingProject(proj); setProjectModalOpen(true); }}
       data={filterData(yearFilteredProjects)}
       headers={[
-        { label: '日期' }, { label: '編號' }, { label: '客戶名稱' }, { label: '服務項目' }, { label: '業務' },
-        { label: '外包廠商' }, { label: '連結銷項/費用' },
-        { label: '未稅金額', align: 'text-right' }, { label: '稅金', align: 'text-right' }, { label: '含稅總額', align: 'text-right' }, 
-        { label: '實收淨利', align: 'text-right' }, { label: '狀態', align: 'text-center' }
+        { label: '編號' },
+        { label: '客戶名稱' },
+        { label: '含稅總額', align: 'text-right' },
+        { label: '實收淨利', align: 'text-right' },
+        { label: '狀態', align: 'text-center' },
+        { label: '日期', className: 'hidden sm:table-cell' },
+        { label: '服務項目', className: 'hidden md:table-cell' },
+        { label: '業務', className: 'hidden lg:table-cell' },
+        { label: '外包廠商', className: 'hidden xl:table-cell' },
+        { label: '連結銷項/費用', className: 'hidden xl:table-cell' }
       ]}
       renderRow={(proj: any) => {
         const netRealizedProfit = getProjectNetProfit(proj);
@@ -1333,13 +1339,35 @@ export default function App() {
 
         return (
           <>
-            <td className="px-4 py-4 rounded-l-2xl font-bold">{proj.date}</td>
-            <td className="px-4 py-4 font-black text-black/40 group-hover:text-black transition-colors">{proj.projectNumber}</td>
-            <td className="px-4 py-4 font-bold">{proj.client}</td>
-            <td className="px-4 py-4 text-slate-600 font-medium">{proj.service}</td>
-            <td className="px-4 py-4 text-slate-800 font-bold">{proj.salesRep}</td>
-            <td className="px-4 py-4 text-slate-600 font-medium text-xs">{outsourcedSummary}</td>
-            <td className="px-4 py-4 text-xs font-bold">
+            {/* 1. 編號 */}
+            <td className="px-3 py-4 rounded-l-2xl font-black text-black/40 group-hover:text-black transition-colors text-xs md:text-sm">{proj.projectNumber}</td>
+            
+            {/* 2. 客戶名稱 (專案名稱) */}
+            <td className="px-3 py-4 font-bold text-slate-900 text-xs md:text-sm max-w-[120px] md:max-w-none truncate">{proj.client}</td>
+            
+            {/* 3. 含稅總額 (金額) */}
+            <td className="px-3 py-4 font-black text-right text-xs md:text-sm">{formatMoney(proj.totalAmount)}</td>
+            
+            {/* 4. 實收淨利 */}
+            <td className="px-3 py-4 font-black text-right text-emerald-600 text-xs md:text-sm">{formatMoney(netRealizedProfit)}</td>
+            
+            {/* 5. 狀態 */}
+            <td className="px-3 py-4 text-center rounded-r-2xl sm:rounded-r-none"><StatusBadge status={proj.status} /></td>
+            
+            {/* 6. 日期 */}
+            <td className="px-3 py-4 font-bold text-xs text-slate-500 hidden sm:table-cell">{proj.date}</td>
+            
+            {/* 7. 服務項目 */}
+            <td className="px-3 py-4 text-slate-600 font-medium text-xs hidden md:table-cell">{proj.service}</td>
+            
+            {/* 8. 業務 */}
+            <td className="px-3 py-4 text-slate-800 font-bold text-xs hidden lg:table-cell">{proj.salesRep}</td>
+            
+            {/* 9. 外包廠商 (移至最後) */}
+            <td className="px-3 py-4 text-slate-600 font-medium text-xs hidden xl:table-cell">{outsourcedSummary}</td>
+            
+            {/* 10. 連結銷項/費用 (移至最後) */}
+            <td className="px-3 py-4 text-xs font-bold rounded-r-2xl hidden xl:table-cell">
               {linkedExps.length === 0 && linkedAsts.length === 0 ? (
                 <span className="text-slate-300">-</span>
               ) : (
@@ -1361,11 +1389,6 @@ export default function App() {
                 </div>
               )}
             </td>
-            <td className="px-4 py-4 font-black text-right">{formatMoney(proj.netAmount)}</td>
-            <td className="px-4 py-4 font-black text-right text-slate-400">{formatMoney(proj.taxAmount)}</td>
-            <td className="px-4 py-4 font-black text-right">{formatMoney(proj.totalAmount)}</td>
-            <td className="px-4 py-4 font-black text-right text-emerald-600">{formatMoney(netRealizedProfit)}</td>
-            <td className="px-4 py-4 rounded-r-2xl text-center"><StatusBadge status={proj.status} /></td>
           </>
         );
       }}
