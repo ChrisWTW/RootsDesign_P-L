@@ -319,9 +319,53 @@ export default function App() {
     };
   }, [isAuthReady, user]);
 
-  // 根據年度篩選
-  const yearFilteredProjects = useMemo(() => projects.filter(p => p.year === selectedYear), [projects, selectedYear]);
-  const yearFilteredExpenses = useMemo(() => expenses.filter(e => e.year === selectedYear), [expenses, selectedYear]);
+  // 外包總額計算輔助函式 (相容舊版單一欄位與新版陣列欄位)
+  const getProjectOutsourcedTotal = (p: any) => {
+    if (Array.isArray(p.outsourcedItems) && p.outsourcedItems.length > 0) {
+      return p.outsourcedItems.reduce((sum: number, item: any) => sum + (Number(item.amount) || 0), 0);
+    }
+    return Number(p.outsourcedAmount) || 0;
+  };
+
+  // 連結報支總金額計算 (支援同一個專案連結多張報支)
+  const getProjectLinkedExpensesTotal = (projectNumber: string) => {
+    if (!projectNumber) return 0;
+    return expenses
+      .filter(e => e.linkedProjectNumber === projectNumber)
+      .reduce((sum: number, e: any) => sum + (Number(e.total) || 0), 0);
+  };
+
+  // 案件實收淨利計算 (70% 未稅金額 - 外包金額 - 連結報支金額)
+  const getProjectNetProfit = (p: any) => {
+    const net70 = (Number(p.netAmount) || 0) * 0.7;
+    const outsourced = getProjectOutsourcedTotal(p);
+    const linkedExpensesTotal = getProjectLinkedExpensesTotal(p.projectNumber);
+    return net70 - outsourced - linkedExpensesTotal;
+  };
+
+  // 根據年度篩選與自動排序 (進行中與待核銷排上方)
+  const yearFilteredProjects = useMemo(() => {
+    const list = projects.filter(p => p.year === selectedYear);
+    return list.sort((a, b) => {
+      const statusOrder: Record<string, number> = { '進行中': 1, '暫停': 2, '已完成': 3 };
+      const orderA = statusOrder[a.status] || 99;
+      const orderB = statusOrder[b.status] || 99;
+      if (orderA !== orderB) return orderA - orderB;
+      return (b.projectNumber || '').localeCompare(a.projectNumber || '');
+    });
+  }, [projects, selectedYear]);
+
+  const yearFilteredExpenses = useMemo(() => {
+    const list = expenses.filter(e => e.year === selectedYear);
+    return list.sort((a, b) => {
+      const statusOrder: Record<string, number> = { '待核銷': 1, '已核銷': 2 };
+      const orderA = statusOrder[a.status] || 99;
+      const orderB = statusOrder[b.status] || 99;
+      if (orderA !== orderB) return orderA - orderB;
+      return (b.expenseNumber || b.date || '').localeCompare(a.expenseNumber || a.date || '');
+    });
+  }, [expenses, selectedYear]);
+
   const yearFilteredAssets = useMemo(() => assets.filter(a => a.year === selectedYear), [assets, selectedYear]);
 
   // 動態計算財務數據
@@ -334,11 +378,12 @@ export default function App() {
     const expenseTotal = approvedExpenses.reduce((sum, e) => sum + (Number(e.total) || 0), 0);
     const taxPayable = completedProjects.reduce((sum, p) => sum + (Number(p.taxAmount) || 0), 0);
     
-    // 實收淨利 = (未稅金額 * 70%) - 外包金額
-    const netProfit = completedProjects.reduce((sum, p) => {
-      const pNet = (Number(p.netAmount) || 0) * 0.7 - (Number(p.outsourcedAmount) || 0);
-      return sum + pNet;
-    }, 0) - expenseTotal;
+    // 實收淨利 = 完成案件實收淨利 - 未連結至專案的獨立已核銷費用
+    const completedProjectsProfit = completedProjects.reduce((sum, p) => sum + getProjectNetProfit(p), 0);
+    const unlinkedApprovedExpensesTotal = approvedExpenses
+      .filter(e => !e.linkedProjectNumber)
+      .reduce((sum, e) => sum + (Number(e.total) || 0), 0);
+    const netProfit = completedProjectsProfit - unlinkedApprovedExpensesTotal;
 
     const legalReserve = netProfit > 0 ? netProfit * 0.1 : 0;
     const distributableDividend = netProfit > 0 ? netProfit - legalReserve : 0;
@@ -351,11 +396,14 @@ export default function App() {
       const net = Number(p.netAmount) || 0;
       const rep = p.salesRep;
       
-      // 業務獎金: 5% (基本) + 10% (新客戶)
+      // 業務獎金: 可依各張單單獨設定基本%數與新客%數
       if (salesCommissions[rep] !== undefined) {
-        salesCommissions[rep] += net * 0.05;
+        const baseRate = p.baseBonusRate !== undefined ? Number(p.baseBonusRate) : 5;
+        const newClientRate = p.newClientBonusRate !== undefined ? Number(p.newClientBonusRate) : 10;
+        
+        salesCommissions[rep] += net * (baseRate / 100);
         if (p.isNewClient === '是') {
-          salesCommissions[rep] += net * 0.1;
+          salesCommissions[rep] += net * (newClientRate / 100);
         }
       }
 
@@ -381,7 +429,7 @@ export default function App() {
       salesCommissions,
       implementationTotals
     };
-  }, [yearFilteredProjects, yearFilteredExpenses]);
+  }, [yearFilteredProjects, yearFilteredExpenses, expenses]);
 
   // 近 5 年營收比較數據
   const fiveYearData = useMemo(() => {
@@ -397,10 +445,8 @@ export default function App() {
 
       const revenue = yearProjects.reduce((sum, p) => sum + (Number(p.totalAmount) || 0), 0);
       const expenseTotal = yearExpenses.reduce((sum, e) => sum + (Number(e.total) || 0), 0);
-      const netProfit = yearProjects.reduce((sum, p) => {
-        const pNet = (Number(p.netAmount) || 0) * 0.7 - (Number(p.outsourcedAmount) || 0);
-        return sum + pNet;
-      }, 0) - expenseTotal;
+      const netProfit = yearProjects.reduce((sum, p) => sum + getProjectNetProfit(p), 0) - 
+        yearExpenses.filter(e => !e.linkedProjectNumber).reduce((sum, e) => sum + (Number(e.total) || 0), 0);
 
       return {
         year: y,
@@ -440,6 +486,8 @@ export default function App() {
     const [totalAmount, setTotalAmount] = useState(editingProject?.totalAmount?.toString() || '');
     const [salesRep, setSalesRep] = useState(editingProject?.salesRep || 'Tim');
     const [isNewClient, setIsNewClient] = useState(editingProject?.isNewClient || '否');
+    const [baseBonusRate, setBaseBonusRate] = useState(editingProject?.baseBonusRate !== undefined ? editingProject.baseBonusRate.toString() : '5');
+    const [newClientBonusRate, setNewClientBonusRate] = useState(editingProject?.newClientBonusRate !== undefined ? editingProject.newClientBonusRate.toString() : '10');
     const [otherRep, setOtherRep] = useState('');
     const [isInvoiceIssued, setIsInvoiceIssued] = useState(editingProject?.isInvoiceIssued || '否');
     const [status, setStatus] = useState(editingProject?.status || '進行中');
@@ -467,9 +515,30 @@ export default function App() {
       Sam: { contribution: 0, amount: 0 }
     });
 
-    const [outsourcedStaff, setOutsourcedStaff] = useState(editingProject?.outsourcedStaff || '');
-    const [outsourcedAmount, setOutsourcedAmount] = useState(editingProject?.outsourcedAmount?.toString() || '');
+    // 外包廠商動態清單
+    const initialOutsourcedItems = useMemo(() => {
+      if (editingProject?.outsourcedItems && Array.isArray(editingProject.outsourcedItems) && editingProject.outsourcedItems.length > 0) {
+        return editingProject.outsourcedItems;
+      }
+      if (editingProject?.outsourcedStaff || editingProject?.outsourcedAmount) {
+        return [{ id: '1', vendor: editingProject.outsourcedStaff || '', amount: Number(editingProject.outsourcedAmount) || 0 }];
+      }
+      return [{ id: '1', vendor: '', amount: 0 }];
+    }, [editingProject]);
+
+    const [outsourcedItems, setOutsourcedItems] = useState<any[]>(initialOutsourcedItems);
     const [projectProgress, setProjectProgress] = useState(editingProject?.projectProgress || '');
+
+    // 查詢連結至此案件的報支與資產
+    const linkedExpenses = useMemo(() => {
+      if (!projectNumber) return [];
+      return expenses.filter(e => e.linkedProjectNumber === projectNumber);
+    }, [expenses, projectNumber]);
+
+    const linkedAssets = useMemo(() => {
+      if (!projectNumber) return [];
+      return assets.filter(a => a.linkedProjectNumber === projectNumber);
+    }, [assets, projectNumber]);
 
     const serviceOptions = ['掃描', '逆向', '設計', '模型製作', '量產需求', '外購'];
     const salesOptions = ['Tim', 'Chris', 'Sam', '其他(備註)'];
@@ -477,6 +546,18 @@ export default function App() {
 
     const handleToggleService = (s: string) => {
       setServices(prev => prev.includes(s) ? prev.filter(x => x !== s) : [...prev, s]);
+    };
+
+    const handleAddOutsourced = () => {
+      setOutsourcedItems(prev => [...prev, { id: Date.now().toString(), vendor: '', amount: 0 }]);
+    };
+
+    const handleRemoveOutsourced = (id: string) => {
+      setOutsourcedItems(prev => prev.filter(item => item.id !== id));
+    };
+
+    const handleOutsourcedItemChange = (id: string, field: string, val: any) => {
+      setOutsourcedItems(prev => prev.map(item => item.id === id ? { ...item, [field]: val } : item));
     };
 
     const handleNetAmountChange = (val: string) => {
@@ -510,6 +591,11 @@ export default function App() {
       e.preventDefault();
       if (!user) return;
       const finalSalesRep = salesRep === '其他(備註)' ? otherRep : salesRep;
+      
+      const validOutsourcedItems = outsourcedItems.filter(i => i.vendor.trim() !== '' || Number(i.amount) > 0);
+      const totalOutsourcedAmount = validOutsourcedItems.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
+      const vendorSummary = validOutsourcedItems.map(item => item.vendor).filter(Boolean).join(', ');
+
       const projectData = {
         date: editingProject?.date || getTodayString(),
         year,
@@ -522,9 +608,12 @@ export default function App() {
         totalAmount: Number(totalAmount) || 0,
         salesRep: finalSalesRep,
         isNewClient,
+        baseBonusRate: Number(baseBonusRate) || 0,
+        newClientBonusRate: Number(newClientBonusRate) || 0,
         implementers,
-        outsourcedStaff,
-        outsourcedAmount: Number(outsourcedAmount) || 0,
+        outsourcedItems: validOutsourcedItems,
+        outsourcedStaff: vendorSummary,
+        outsourcedAmount: totalOutsourcedAmount,
         projectProgress,
         isInvoiceIssued,
         uid: user.uid,
@@ -621,28 +710,95 @@ export default function App() {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <div>
-                <label className="block text-sm font-bold text-slate-700 mb-1">業務</label>
-                <select value={salesRep} onChange={e => setSalesRep(e.target.value)} className="w-full rounded-xl border border-black/10 bg-white/60 px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-black/50 font-bold text-slate-800">
-                  {salesOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
-                </select>
-                {salesRep === '其他(備註)' && (
-                  <input required type="text" value={otherRep} onChange={e => setOtherRep(e.target.value)} className="w-full rounded-xl border border-black/10 bg-white/60 px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-black/50 transition-all font-bold mt-2" placeholder="請填寫業務備註" />
-                )}
+            {/* 實收淨利即時試算卡片 */}
+            {(() => {
+              const currentOutsourced = outsourcedItems.reduce((s, i) => s + (Number(i.amount) || 0), 0);
+              const currentLinkedExpSum = linkedExpenses.reduce((s, e) => s + (Number(e.total) || 0), 0);
+              const currentNet70 = (Number(netAmount) || 0) * 0.7;
+              const liveNetProfit = currentNet70 - currentOutsourced - currentLinkedExpSum;
+
+              return (
+                <div className="p-5 rounded-3xl bg-gradient-to-br from-slate-900 via-slate-800 to-black text-white shadow-xl space-y-3">
+                  <div className="flex justify-between items-center border-b border-white/10 pb-2">
+                    <span className="text-xs font-black text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+                      <TrendingUp size={14} className="text-emerald-400" /> 專案實收淨利即時試算
+                    </span>
+                    <span className={`text-2xl font-black ${liveNetProfit >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                      {formatMoney(liveNetProfit)}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2 text-[11px] font-bold">
+                    <div className="bg-white/10 p-2.5 rounded-2xl">
+                      <span className="text-slate-400 block mb-0.5">未稅 70% 扣除額</span>
+                      <span className="text-white font-black text-xs">{formatMoney(currentNet70)}</span>
+                    </div>
+                    <div className="bg-white/10 p-2.5 rounded-2xl">
+                      <span className="text-rose-300 block mb-0.5">外包扣除 (-)</span>
+                      <span className="text-rose-400 font-black text-xs">-{formatMoney(currentOutsourced)}</span>
+                    </div>
+                    <div className="bg-white/10 p-2.5 rounded-2xl">
+                      <span className="text-amber-300 block mb-0.5">連結報支扣除 (-)</span>
+                      <span className="text-amber-400 font-black text-xs">-{formatMoney(currentLinkedExpSum)}</span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* 業務與獎金 % 數區塊 */}
+            <div className="p-4 bg-white/40 rounded-2xl border border-black/5 space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-sm font-bold text-slate-700 mb-1">業務</label>
+                  <select value={salesRep} onChange={e => setSalesRep(e.target.value)} className="w-full rounded-xl border border-black/10 bg-white/60 px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-black/50 font-bold text-slate-800">
+                    {salesOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                  </select>
+                  {salesRep === '其他(備註)' && (
+                    <input required type="text" value={otherRep} onChange={e => setOtherRep(e.target.value)} className="w-full rounded-xl border border-black/10 bg-white/60 px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-black/50 transition-all font-bold mt-2" placeholder="請填寫業務備註" />
+                  )}
+                </div>
+                <div>
+                  <label className="block text-sm font-bold text-slate-700 mb-1">新客戶</label>
+                  <select value={isNewClient} onChange={e => setIsNewClient(e.target.value)} className="w-full rounded-xl border border-black/10 bg-white/60 px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-black/50 font-bold text-slate-800">
+                    <option value="是">是</option>
+                    <option value="否">否</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-bold text-slate-700 mb-1">是否開立發票</label>
+                  <select value={isInvoiceIssued} onChange={e => setIsInvoiceIssued(e.target.value)} className="w-full rounded-xl border border-black/10 bg-white/60 px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-black/50 font-bold text-slate-800">
+                    {invoiceOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                  </select>
+                </div>
               </div>
-              <div>
-                <label className="block text-sm font-bold text-slate-700 mb-1">新客戶</label>
-                <select value={isNewClient} onChange={e => setIsNewClient(e.target.value)} className="w-full rounded-xl border border-black/10 bg-white/60 px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-black/50 font-bold text-slate-800">
-                  <option value="是">是</option>
-                  <option value="否">否</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-bold text-slate-700 mb-1">是否開立發票</label>
-                <select value={isInvoiceIssued} onChange={e => setIsInvoiceIssued(e.target.value)} className="w-full rounded-xl border border-black/10 bg-white/60 px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-black/50 font-bold text-slate-800">
-                  {invoiceOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
-                </select>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 border-t border-black/5 pt-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-600 mb-1">業務基本獎金 % 數</label>
+                  <div className="flex items-center space-x-2">
+                    <input 
+                      type="number" 
+                      value={baseBonusRate} 
+                      onChange={e => setBaseBonusRate(e.target.value)} 
+                      className="w-full rounded-xl border border-black/10 bg-white/60 px-3 py-2 font-black" 
+                      placeholder="5" 
+                    />
+                    <span className="font-bold text-slate-400">%</span>
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-600 mb-1">新客加碼獎金 % 數</label>
+                  <div className="flex items-center space-x-2">
+                    <input 
+                      type="number" 
+                      value={newClientBonusRate} 
+                      onChange={e => setNewClientBonusRate(e.target.value)} 
+                      className="w-full rounded-xl border border-black/10 bg-white/60 px-3 py-2 font-black" 
+                      placeholder="10" 
+                    />
+                    <span className="font-bold text-slate-400">%</span>
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -670,15 +826,102 @@ export default function App() {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 border-t border-black/5 pt-5">
-              <div>
-                <label className="block text-sm font-bold text-slate-700 mb-1">外包人員</label>
-                <input type="text" value={outsourcedStaff} onChange={e => setOutsourcedStaff(e.target.value)} className="w-full rounded-xl border border-black/10 bg-white/60 px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-black/50 font-bold" placeholder="輸入外包人員" />
+            {/* 外包廠商多筆新增區塊 */}
+            <div className="border-t border-black/5 pt-5">
+              <div className="flex justify-between items-center mb-3">
+                <label className="block text-sm font-bold text-slate-700">外包廠商與金額 (可新增多家)</label>
+                <button 
+                  type="button" 
+                  onClick={handleAddOutsourced}
+                  className="text-xs font-bold bg-slate-900 text-white px-3 py-1.5 rounded-full hover:bg-black transition-all flex items-center space-x-1 shadow-sm"
+                >
+                  <Plus size={14} /> <span>新增外包廠商</span>
+                </button>
               </div>
-              <div>
-                <label className="block text-sm font-bold text-slate-700 mb-1">外包金額</label>
-                <input type="number" value={outsourcedAmount} onChange={e => setOutsourcedAmount(e.target.value)} className="w-full rounded-xl border border-black/10 bg-white/60 px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-black/50 font-black" placeholder="NT$" />
+
+              <div className="space-y-3">
+                {outsourcedItems.map((item, idx) => (
+                  <div key={item.id || idx} className="flex items-center space-x-3 bg-white/40 p-3 rounded-2xl border border-black/5 shadow-sm">
+                    <input 
+                      type="text" 
+                      value={item.vendor} 
+                      onChange={e => handleOutsourcedItemChange(item.id, 'vendor', e.target.value)} 
+                      className="flex-1 rounded-xl border border-black/10 bg-white/70 px-3 py-2 font-bold text-sm" 
+                      placeholder="外包廠商名稱" 
+                    />
+                    <input 
+                      type="number" 
+                      value={item.amount || ''} 
+                      onChange={e => handleOutsourcedItemChange(item.id, 'amount', Number(e.target.value) || 0)} 
+                      className="w-32 rounded-xl border border-black/10 bg-white/70 px-3 py-2 font-black text-sm text-right" 
+                      placeholder="NT$" 
+                    />
+                    {outsourcedItems.length > 1 && (
+                      <button 
+                        type="button" 
+                        onClick={() => handleRemoveOutsourced(item.id)}
+                        className="p-2 text-rose-500 hover:bg-rose-100 rounded-xl transition-colors"
+                      >
+                        <X size={16} />
+                      </button>
+                    )}
+                  </div>
+                ))}
               </div>
+            </div>
+
+            {/* 連結之銷項與費用明細 (支援同專案連結多張報支) */}
+            <div className="border-t border-black/5 pt-5">
+              <div className="flex justify-between items-center mb-3">
+                <div>
+                  <label className="block text-sm font-bold text-slate-700">連結報支與進項明細 ({linkedExpenses.length} 筆)</label>
+                  <p className="text-[11px] font-bold text-slate-400">已連結報支扣除總計：{formatMoney(linkedExpenses.reduce((s, e) => s + (Number(e.total) || 0), 0))}</p>
+                </div>
+                <button 
+                  type="button"
+                  onClick={() => {
+                    setEditingExpense({ linkedProjectNumber: projectNumber });
+                    setExpenseModalOpen(true);
+                  }}
+                  className="text-xs font-bold bg-amber-600 text-white px-3 py-1.5 rounded-full hover:bg-amber-700 transition-all flex items-center space-x-1 shadow-sm"
+                >
+                  <Plus size={14} /> <span>連結新報支</span>
+                </button>
+              </div>
+
+              {linkedExpenses.length === 0 && linkedAssets.length === 0 ? (
+                <p className="text-xs font-bold text-slate-400 bg-white/30 p-3 rounded-2xl text-center border border-dashed border-black/10">
+                  目前尚無連結至此專案的報支或資產
+                </p>
+              ) : (
+                <div className="space-y-2 max-h-48 overflow-y-auto no-scrollbar">
+                  {linkedExpenses.map(e => (
+                    <div key={e.id} className="flex justify-between items-center p-3 bg-amber-50/70 hover:bg-amber-100/70 transition-colors rounded-2xl border border-amber-200/80 text-xs font-bold">
+                      <div className="flex items-center space-x-2">
+                        <span className="font-black bg-amber-200 text-amber-900 px-2 py-0.5 rounded-lg">{e.expenseNumber || '報支'}</span>
+                        <span className="text-slate-800">{e.summary}</span>
+                        <span className="text-slate-400">({e.payer} • {e.category})</span>
+                      </div>
+                      <div className="flex items-center space-x-3">
+                        <span className="font-black text-rose-600">-{formatMoney(e.total)}</span>
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${e.status === '已核銷' ? 'bg-black text-white' : 'bg-rose-500 text-white'}`}>
+                          {e.status}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                  {linkedAssets.map(a => (
+                    <div key={a.id} className="flex justify-between items-center p-3 bg-purple-50/70 hover:bg-purple-100/70 transition-colors rounded-2xl border border-purple-200/80 text-xs font-bold">
+                      <div className="flex items-center space-x-2">
+                        <span className="font-black bg-purple-200 text-purple-900 px-2 py-0.5 rounded-lg">{a.assetNumber || '資產'}</span>
+                        <span className="text-slate-800">{a.name}</span>
+                        <span className="text-slate-400">({a.category})</span>
+                      </div>
+                      <span className="font-black text-purple-700">{formatMoney(a.cost)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             <div>
@@ -735,6 +978,22 @@ export default function App() {
     const [year, setYear] = useState(editingExpense?.year || selectedYear);
     const [showConfirmDelete, setShowConfirmDelete] = useState(false);
 
+    // 自動編號: S-XX(年)-XXX(流水號)
+    const defaultExpenseNumber = useMemo(() => {
+      if (editingExpense?.expenseNumber) return editingExpense.expenseNumber;
+      const yearExpenses = expenses.filter(e => e.year === year);
+      if (yearExpenses.length === 0) return `S-${String(year).slice(-2)}-001`;
+      const lastNum = yearExpenses.reduce((max, e) => {
+        const match = (e.expenseNumber || '').match(/\d+$/);
+        const num = match ? parseInt(match[0], 10) : 0;
+        return num > max ? num : max;
+      }, 0);
+      return `S-${String(year).slice(-2)}-${String(lastNum + 1).padStart(3, '0')}`;
+    }, [expenses, editingExpense, year]);
+
+    const [expenseNumber, setExpenseNumber] = useState(editingExpense?.expenseNumber || defaultExpenseNumber);
+    const [linkedProjectNumber, setLinkedProjectNumber] = useState(editingExpense?.linkedProjectNumber || '');
+
     const catOptions = ['辦公需求', '膳雜費', '專案採購(耗材)', '專案採購(代購)', '專案採購(工具)', '其他'];
     const payerOptions = ['Tim', 'Chris', 'Sam'];
     const invoiceOptions = ['有', '無'];
@@ -746,6 +1005,8 @@ export default function App() {
       const expenseData = {
         date: editingExpense?.date || getTodayString(),
         year,
+        expenseNumber,
+        linkedProjectNumber,
         category,
         summary: notes || '無備註',
         payer,
@@ -795,10 +1056,8 @@ export default function App() {
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-bold text-slate-700 mb-1">類別</label>
-                <select value={category} onChange={e => setCategory(e.target.value)} className="w-full rounded-xl border border-black/10 bg-white/60 px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-black/50 font-bold">
-                  {catOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
-                </select>
+                <label className="block text-sm font-bold text-slate-700 mb-1">報支單號</label>
+                <input required type="text" value={expenseNumber} onChange={e => setExpenseNumber(e.target.value)} className="w-full rounded-xl border border-black/10 bg-white/60 px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-black/50 font-bold" />
               </div>
               <div>
                 <label className="block text-sm font-bold text-slate-700 mb-1">歸屬年度</label>
@@ -807,10 +1066,27 @@ export default function App() {
                 </select>
               </div>
               <div>
+                <label className="block text-sm font-bold text-slate-700 mb-1">類別</label>
+                <select value={category} onChange={e => setCategory(e.target.value)} className="w-full rounded-xl border border-black/10 bg-white/60 px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-black/50 font-bold">
+                  {catOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                </select>
+              </div>
+              <div>
                 <label className="block text-sm font-bold text-slate-700 mb-1">狀態</label>
                 <select value={status} onChange={e => setStatus(e.target.value)} className="w-full rounded-xl border border-black/10 bg-white/60 px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-black/50 font-bold">
                   <option value="待核銷">待核銷</option>
                   <option value="已核銷">已核銷</option>
+                </select>
+              </div>
+              <div className="col-span-1 sm:col-span-2">
+                <label className="block text-sm font-bold text-slate-700 mb-1">連結案件 (可選)</label>
+                <select value={linkedProjectNumber} onChange={e => setLinkedProjectNumber(e.target.value)} className="w-full rounded-xl border border-black/10 bg-white/60 px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-black/50 font-bold text-slate-800">
+                  <option value="">無連結案件</option>
+                  {projects.map(p => (
+                    <option key={p.id} value={p.projectNumber}>
+                      {p.projectNumber} - {p.client} ({p.service})
+                    </option>
+                  ))}
                 </select>
               </div>
               <div className="col-span-1 sm:col-span-2">
@@ -1041,11 +1317,20 @@ export default function App() {
       data={filterData(yearFilteredProjects)}
       headers={[
         { label: '日期' }, { label: '編號' }, { label: '客戶名稱' }, { label: '服務項目' }, { label: '業務' },
+        { label: '外包廠商' }, { label: '連結銷項/費用' },
         { label: '未稅金額', align: 'text-right' }, { label: '稅金', align: 'text-right' }, { label: '含稅總額', align: 'text-right' }, 
         { label: '實收淨利', align: 'text-right' }, { label: '狀態', align: 'text-center' }
       ]}
       renderRow={(proj: any) => {
-        const netRealizedProfit = (Number(proj.netAmount) || 0) * 0.7 - (Number(proj.outsourcedAmount) || 0);
+        const netRealizedProfit = getProjectNetProfit(proj);
+        
+        const linkedExps = expenses.filter(e => e.linkedProjectNumber === proj.projectNumber);
+        const linkedAsts = assets.filter(a => a.linkedProjectNumber === proj.projectNumber);
+        const linkedExpsSum = getProjectLinkedExpensesTotal(proj.projectNumber);
+        
+        const outsourcedSummary = proj.outsourcedStaff || 
+          (Array.isArray(proj.outsourcedItems) ? proj.outsourcedItems.map((i: any) => i.vendor).filter(Boolean).join(', ') : '') || '-';
+
         return (
           <>
             <td className="px-4 py-4 rounded-l-2xl font-bold">{proj.date}</td>
@@ -1053,10 +1338,33 @@ export default function App() {
             <td className="px-4 py-4 font-bold">{proj.client}</td>
             <td className="px-4 py-4 text-slate-600 font-medium">{proj.service}</td>
             <td className="px-4 py-4 text-slate-800 font-bold">{proj.salesRep}</td>
+            <td className="px-4 py-4 text-slate-600 font-medium text-xs">{outsourcedSummary}</td>
+            <td className="px-4 py-4 text-xs font-bold">
+              {linkedExps.length === 0 && linkedAsts.length === 0 ? (
+                <span className="text-slate-300">-</span>
+              ) : (
+                <div className="flex flex-col gap-1 max-w-[220px]">
+                  {linkedExps.length > 0 && (
+                    <div className="flex items-center justify-between text-amber-700 bg-amber-50/80 px-2 py-0.5 rounded-lg border border-amber-200">
+                      <span>{linkedExps.length} 筆報支</span>
+                      <span className="font-black">-{formatMoney(linkedExpsSum)}</span>
+                    </div>
+                  )}
+                  {linkedExps.slice(0, 2).map(e => (
+                    <span key={e.id} className="text-blue-600 bg-blue-50/60 px-2 py-0.5 rounded-lg border border-blue-100 truncate text-[10px]" title={`${e.expenseNumber || 'S'}-${e.summary}-${e.total}`}>
+                      {e.expenseNumber || 'S'}-{e.summary}-{e.total}
+                    </span>
+                  ))}
+                  {linkedExps.length > 2 && (
+                    <span className="text-[10px] text-slate-400 font-bold pl-1">+ 還有 {linkedExps.length - 2} 筆...</span>
+                  )}
+                </div>
+              )}
+            </td>
             <td className="px-4 py-4 font-black text-right">{formatMoney(proj.netAmount)}</td>
             <td className="px-4 py-4 font-black text-right text-slate-400">{formatMoney(proj.taxAmount)}</td>
             <td className="px-4 py-4 font-black text-right">{formatMoney(proj.totalAmount)}</td>
-            <td className="px-4 py-4 font-black text-right text-blue-600">{formatMoney(netRealizedProfit)}</td>
+            <td className="px-4 py-4 font-black text-right text-emerald-600">{formatMoney(netRealizedProfit)}</td>
             <td className="px-4 py-4 rounded-r-2xl text-center"><StatusBadge status={proj.status} /></td>
           </>
         );
@@ -1072,12 +1380,14 @@ export default function App() {
       onRowClick={(exp: any) => { setEditingExpense(exp); setExpenseModalOpen(true); }}
       data={filterData(yearFilteredExpenses)}
       headers={[
-        { label: '日期' }, { label: '類別' }, { label: '摘要(備註)' }, { label: '付款人' }, { label: '發票' }, { label: '已開立' },
+        { label: '日期' }, { label: '單號' }, { label: '連結案件' }, { label: '類別' }, { label: '摘要(備註)' }, { label: '付款人' }, { label: '發票' }, { label: '已開立' },
         { label: '總額', align: 'text-right' }, { label: '狀態', align: 'text-center' }, { label: '操作', align: 'text-center' }
       ]}
       renderRow={(exp: any) => (
         <>
           <td className="px-4 py-4 rounded-l-2xl font-bold">{exp.date}</td>
+          <td className="px-4 py-4 font-black text-slate-700">{exp.expenseNumber || '-'}</td>
+          <td className="px-4 py-4 font-bold text-blue-600">{exp.linkedProjectNumber || '-'}</td>
           <td className="px-4 py-4 font-medium text-slate-500">{exp.category}</td>
           <td className="px-4 py-4 font-bold">{exp.summary}</td>
           <td className="px-4 py-4 font-medium text-blue-600">{exp.payer}</td>
@@ -1115,7 +1425,7 @@ export default function App() {
       onRowClick={(asset: any) => { setEditingAsset(asset); setAssetModalOpen(true); }}
       data={filterData(yearFilteredAssets)}
       headers={[
-        { label: '名稱' }, { label: '購入日' }, { label: '金額', align: 'text-right' }, 
+        { label: '單號' }, { label: '名稱' }, { label: '連結案件' }, { label: '購入日' }, { label: '金額', align: 'text-right' }, 
         { label: '年限' }, { label: '月攤提', align: 'text-right' }, { label: '帳面殘值', align: 'text-right' }
       ]}
       renderRow={(asset: any) => {
@@ -1124,7 +1434,9 @@ export default function App() {
         const residual = Math.max(asset.residualValue, asset.cost - monthlyAmort * 12);
         return (
           <>
-            <td className="px-4 py-4 rounded-l-2xl font-bold text-black">{asset.name}</td>
+            <td className="px-4 py-4 rounded-l-2xl font-black text-slate-700">{asset.assetNumber || '-'}</td>
+            <td className="px-4 py-4 font-bold text-black">{asset.name}</td>
+            <td className="px-4 py-4 font-bold text-purple-600">{asset.linkedProjectNumber || '-'}</td>
             <td className="px-4 py-4 font-medium text-slate-500">{asset.purchaseDate}</td>
             <td className="px-4 py-4 font-black text-right">{formatMoney(asset.cost)}</td>
             <td className="px-4 py-4 font-medium">{asset.usefulLife} 年</td>
@@ -1147,6 +1459,22 @@ export default function App() {
     const [year, setYear] = useState(editingAsset?.year || selectedYear);
     const [showConfirmDelete, setShowConfirmDelete] = useState(false);
 
+    // 自動編號: T-XX(年)-XXX(流水號)
+    const defaultAssetNumber = useMemo(() => {
+      if (editingAsset?.assetNumber) return editingAsset.assetNumber;
+      const yearAssets = assets.filter(a => a.year === year);
+      if (yearAssets.length === 0) return `T-${String(year).slice(-2)}-001`;
+      const lastNum = yearAssets.reduce((max, a) => {
+        const match = (a.assetNumber || '').match(/\d+$/);
+        const num = match ? parseInt(match[0], 10) : 0;
+        return num > max ? num : max;
+      }, 0);
+      return `T-${String(year).slice(-2)}-${String(lastNum + 1).padStart(3, '0')}`;
+    }, [assets, editingAsset, year]);
+
+    const [assetNumber, setAssetNumber] = useState(editingAsset?.assetNumber || defaultAssetNumber);
+    const [linkedProjectNumber, setLinkedProjectNumber] = useState(editingAsset?.linkedProjectNumber || '');
+
     const catOptions = ['辦公設備', '運輸設備', '生產設備', '無形資產', '其他'];
 
     const handleSubmit = async (e: React.FormEvent) => {
@@ -1154,6 +1482,8 @@ export default function App() {
       if (!user) return;
       const assetData = {
         name,
+        assetNumber,
+        linkedProjectNumber,
         cost: Number(cost) || 0,
         purchaseDate,
         year,
@@ -1202,9 +1532,30 @@ export default function App() {
           </div>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-bold text-slate-700 mb-1">資產單號</label>
+                <input required type="text" value={assetNumber} onChange={e => setAssetNumber(e.target.value)} className="w-full rounded-xl border border-black/10 bg-white/60 px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-black/50 font-bold" />
+              </div>
+              <div>
+                <label className="block text-sm font-bold text-slate-700 mb-1">歸屬年度</label>
+                <select value={year} onChange={e => setYear(Number(e.target.value))} className="w-full rounded-xl border border-black/10 bg-white/60 px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-black/50 font-bold">
+                  {Array.from({ length: 38 }, (_, i) => 2023 + i).map(y => <option key={y} value={y}>{y}</option>)}
+                </select>
+              </div>
               <div className="col-span-1 sm:col-span-2">
                 <label className="block text-sm font-bold text-slate-700 mb-1">資產名稱</label>
                 <input required type="text" value={name} onChange={e => setName(e.target.value)} className="w-full rounded-xl border border-black/10 bg-white/60 px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-black/50 font-bold" placeholder="例如：MacBook Pro" />
+              </div>
+              <div className="col-span-1 sm:col-span-2">
+                <label className="block text-sm font-bold text-slate-700 mb-1">連結案件 (可選)</label>
+                <select value={linkedProjectNumber} onChange={e => setLinkedProjectNumber(e.target.value)} className="w-full rounded-xl border border-black/10 bg-white/60 px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-black/50 font-bold text-slate-800">
+                  <option value="">無連結案件</option>
+                  {projects.map(p => (
+                    <option key={p.id} value={p.projectNumber}>
+                      {p.projectNumber} - {p.client} ({p.service})
+                    </option>
+                  ))}
+                </select>
               </div>
               <div>
                 <label className="block text-sm font-bold text-slate-700 mb-1">購入金額</label>
@@ -1222,16 +1573,10 @@ export default function App() {
                 <label className="block text-sm font-bold text-slate-700 mb-1">預估殘值</label>
                 <input required type="number" value={residualValue} onChange={e => setResidualValue(e.target.value)} className="w-full rounded-xl border border-black/10 bg-white/60 px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-black/50 font-bold" />
               </div>
-              <div>
+              <div className="col-span-1 sm:col-span-2">
                 <label className="block text-sm font-bold text-slate-700 mb-1">資產類別</label>
                 <select value={category} onChange={e => setCategory(e.target.value)} className="w-full rounded-xl border border-black/10 bg-white/60 px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-black/50 font-bold">
                   {catOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-bold text-slate-700 mb-1">歸屬年度</label>
-                <select value={year} onChange={e => setYear(Number(e.target.value))} className="w-full rounded-xl border border-black/10 bg-white/60 px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-black/50 font-bold">
-                  {Array.from({ length: 38 }, (_, i) => 2023 + i).map(y => <option key={y} value={y}>{y}</option>)}
                 </select>
               </div>
             </div>
