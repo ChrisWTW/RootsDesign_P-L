@@ -69,8 +69,8 @@ class ErrorBoundary extends Component<{children: React.ReactNode}, {hasError: bo
           <p className="text-rose-700 mb-6 max-w-md">
             應用程式遇到非預期錯誤。請嘗試重新整理頁面。
           </p>
-          <pre className="bg-white p-4 rounded-xl text-xs text-left overflow-auto max-w-full border border-rose-200 shadow-sm">
-            {JSON.stringify(this.state.error, null, 2)}
+          <pre className="bg-white p-4 rounded-xl text-xs text-left overflow-auto max-w-full border border-rose-200 shadow-sm font-mono whitespace-pre-wrap">
+            {this.state.error?.stack || this.state.error?.message || String(this.state.error)}
           </pre>
           <button 
             onClick={() => window.location.reload()}
@@ -573,6 +573,10 @@ export default function App() {
       if (!projectNumber) return [];
       return assets.filter(a => a.linkedProjectNumber === projectNumber);
     }, [assets, projectNumber]);
+
+    const serviceOptions = ['掃描', '逆向', '設計', '模型製作', '量產需求', '外購'];
+    const salesOptions = ['Tim', 'Chris', 'Sam', '無', '其他(備註)'];
+    const invoiceOptions = ['是', '否'];
 
     const recalculateImplementers = (
       netVal = netAmount,
