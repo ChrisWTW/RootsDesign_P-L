@@ -159,48 +159,75 @@ const StatusBadge = ({ status }: { status: string }) => {
   );
 };
 
-const TableView = ({ title, buttonText, headers, renderRow, data, onAdd, onRowClick }: any) => (
+const TableView = ({ title, buttonText, headers, renderRow, renderMobileCard, data, onAdd, onRowClick }: any) => (
   <div className="glass-panel rounded-3xl flex flex-col h-full overflow-hidden animate-in fade-in zoom-in-95 duration-300">
-    <div className="p-6 lg:p-8 border-b border-black/5 flex justify-between items-center bg-white/20">
-      <h2 className="text-2xl font-black text-black tracking-tight">{title}</h2>
+    <div className="p-4 sm:p-6 lg:p-8 border-b border-black/5 flex justify-between items-center bg-white/20">
+      <h2 className="text-xl sm:text-2xl font-black text-black tracking-tight">{title}</h2>
       <button 
         onClick={onAdd}
-        className="bg-black text-white px-5 py-2.5 rounded-full text-sm font-bold hover:scale-105 transition-transform flex items-center shadow-lg"
+        className="bg-black text-white px-4 py-2.5 sm:px-5 sm:py-2.5 rounded-full text-xs sm:text-sm font-bold hover:scale-105 active:scale-95 transition-all flex items-center shadow-lg"
       >
-        <Plus size={18} className="mr-1.5" strokeWidth={3} /> {buttonText}
+        <Plus size={16} className="mr-1 sm:mr-1.5" strokeWidth={3} /> {buttonText}
       </button>
     </div>
-    <div className="overflow-x-auto no-scrollbar p-4 md:p-6">
-      <table className="w-full text-left border-separate border-spacing-y-2">
-        <thead>
-          <tr>
-            {headers.map((h: any, i: number) => (
-              <th key={i} className={`px-3 py-3 text-xs md:text-sm font-bold text-slate-400 uppercase tracking-wider ${h.align || ''} ${h.className || ''}`}>
-                {h.label}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {data.length === 0 ? (
+    <div className="p-3 sm:p-4 md:p-6">
+      {/* 手機卡片化檢視 (iPhone / Mobile View) */}
+      <div className="md:hidden space-y-3">
+        {data.length === 0 ? (
+          <div className="p-8 text-center text-slate-400 font-bold bg-white/30 rounded-2xl">
+            目前尚無資料，或沒有符合搜尋條件的項目
+          </div>
+        ) : (
+          data.map((row: any, idx: number) => (
+            <div 
+              key={idx}
+              onClick={() => onRowClick && onRowClick(row)}
+              className="bg-white/70 hover:bg-white/95 active:scale-[0.99] transition-all shadow-sm rounded-2xl p-4 border border-black/5 space-y-2.5 cursor-pointer"
+            >
+              {renderMobileCard ? renderMobileCard(row, idx) : (
+                <div className="flex justify-between items-center">
+                  <span className="font-bold text-sm text-black">{row.client || row.summary || row.name}</span>
+                  <StatusBadge status={row.status} />
+                </div>
+              )}
+            </div>
+          ))
+        )}
+      </div>
+
+      {/* 電腦表格化檢視 (Desktop View) */}
+      <div className="hidden md:block overflow-x-auto no-scrollbar">
+        <table className="w-full text-left border-separate border-spacing-y-2">
+          <thead>
             <tr>
-              <td colSpan={headers.length} className="px-4 py-12 text-center text-slate-400 font-bold bg-white/30 rounded-2xl">
-                目前尚無資料，或沒有符合搜尋條件的項目
-              </td>
+              {headers.map((h: any, i: number) => (
+                <th key={i} className={`px-3 py-3 text-xs md:text-sm font-bold text-slate-400 uppercase tracking-wider ${h.align || ''} ${h.className || ''}`}>
+                  {h.label}
+                </th>
+              ))}
             </tr>
-          ) : (
-            data.map((row: any, idx: number) => (
-              <tr 
-                key={idx} 
-                onClick={() => onRowClick && onRowClick(row)}
-                className={`bg-white/50 hover:bg-white/80 transition-colors shadow-sm rounded-2xl group ${onRowClick ? 'cursor-pointer' : ''}`}
-              >
-                {renderRow(row, idx)}
+          </thead>
+          <tbody>
+            {data.length === 0 ? (
+              <tr>
+                <td colSpan={headers.length} className="px-4 py-12 text-center text-slate-400 font-bold bg-white/30 rounded-2xl">
+                  目前尚無資料，或沒有符合搜尋條件的項目
+                </td>
               </tr>
-            ))
-          )}
-        </tbody>
-      </table>
+            ) : (
+              data.map((row: any, idx: number) => (
+                <tr 
+                  key={idx} 
+                  onClick={() => onRowClick && onRowClick(row)}
+                  className={`bg-white/50 hover:bg-white/80 transition-colors shadow-sm rounded-2xl group ${onRowClick ? 'cursor-pointer' : ''}`}
+                >
+                  {renderRow(row, idx)}
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
     </div>
   </div>
 );
@@ -488,6 +515,7 @@ export default function App() {
     const [isNewClient, setIsNewClient] = useState(editingProject?.isNewClient || '否');
     const [baseBonusRate, setBaseBonusRate] = useState(editingProject?.baseBonusRate !== undefined ? editingProject.baseBonusRate.toString() : '5');
     const [newClientBonusRate, setNewClientBonusRate] = useState(editingProject?.newClientBonusRate !== undefined ? editingProject.newClientBonusRate.toString() : '10');
+    const [implementationPoolRate, setImplementationPoolRate] = useState<number>(editingProject?.implementationPoolRate || 30);
     const [otherRep, setOtherRep] = useState('');
     const [isInvoiceIssued, setIsInvoiceIssued] = useState(editingProject?.isInvoiceIssued || '否');
     const [status, setStatus] = useState(editingProject?.status || '進行中');
@@ -541,7 +569,7 @@ export default function App() {
     }, [assets, projectNumber]);
 
     const serviceOptions = ['掃描', '逆向', '設計', '模型製作', '量產需求', '外購'];
-    const salesOptions = ['Tim', 'Chris', 'Sam', '其他(備註)'];
+    const salesOptions = ['Tim', 'Chris', 'Sam', '無', '其他(備註)'];
     const invoiceOptions = ['是', '否'];
 
     const handleToggleService = (s: string) => {
@@ -560,6 +588,16 @@ export default function App() {
       setOutsourcedItems(prev => prev.map(item => item.id === id ? { ...item, [field]: val } : item));
     };
 
+    const handlePoolRateChange = (rate: number) => {
+      setImplementationPoolRate(rate);
+      const net = Number(netAmount) || 0;
+      const newImps = { ...implementers };
+      Object.keys(newImps).forEach(name => {
+        newImps[name].amount = Math.round(net * (rate / 100) * (newImps[name].contribution / 100));
+      });
+      setImplementers(newImps);
+    };
+
     const handleNetAmountChange = (val: string) => {
       const net = Number(val) || 0;
       const tax = Math.round(net * 0.05);
@@ -571,7 +609,7 @@ export default function App() {
       // 更新實作人員金額
       const newImps = { ...implementers };
       Object.keys(newImps).forEach(name => {
-        newImps[name].amount = Math.round(net * 0.3 * (newImps[name].contribution / 100));
+        newImps[name].amount = Math.round(net * (implementationPoolRate / 100) * (newImps[name].contribution / 100));
       });
       setImplementers(newImps);
     };
@@ -579,7 +617,7 @@ export default function App() {
     const handleContributionChange = (name: string, val: number) => {
       const contribution = Math.min(100, Math.max(0, val));
       const net = Number(netAmount) || 0;
-      const amount = Math.round(net * 0.3 * (contribution / 100));
+      const amount = Math.round(net * (implementationPoolRate / 100) * (contribution / 100));
       
       setImplementers({
         ...implementers,
@@ -610,6 +648,7 @@ export default function App() {
         isNewClient,
         baseBonusRate: Number(baseBonusRate) || 0,
         newClientBonusRate: Number(newClientBonusRate) || 0,
+        implementationPoolRate,
         implementers,
         outsourcedItems: validOutsourcedItems,
         outsourcedStaff: vendorSummary,
@@ -803,22 +842,42 @@ export default function App() {
             </div>
 
             <div className="border-t border-black/5 pt-5">
-              <label className="block text-sm font-bold text-slate-700 mb-3">實作人員與貢獻 (分配 30% 未稅金額)</label>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-3 gap-2">
+                <label className="block text-sm font-bold text-slate-700">
+                  實作人員與貢獻 (分配未稅金額 % 數)
+                </label>
+                <div className="flex bg-white/60 p-1 rounded-xl border border-black/10 text-xs font-bold self-start sm:self-auto shadow-sm">
+                  <button 
+                    type="button"
+                    onClick={() => handlePoolRateChange(30)}
+                    className={`px-3 py-1 rounded-lg transition-all ${implementationPoolRate === 30 ? 'bg-black text-white shadow-sm font-black' : 'text-slate-500 hover:text-black'}`}
+                  >
+                    30% 獎金池
+                  </button>
+                  <button 
+                    type="button"
+                    onClick={() => handlePoolRateChange(50)}
+                    className={`px-3 py-1 rounded-lg transition-all ${implementationPoolRate === 50 ? 'bg-black text-white shadow-sm font-black' : 'text-slate-500 hover:text-black'}`}
+                  >
+                    50% 獎金池
+                  </button>
+                </div>
+              </div>
               <div className="space-y-3">
                 {['Tim', 'Chris', 'Sam'].map(name => (
-                  <div key={name} className="grid grid-cols-2 sm:grid-cols-3 gap-4 items-center">
-                    <div className="font-bold text-slate-600">{name}</div>
+                  <div key={name} className="grid grid-cols-2 sm:grid-cols-3 gap-3 sm:gap-4 items-center bg-white/40 sm:bg-transparent p-2.5 sm:p-0 rounded-2xl border border-black/5 sm:border-none">
+                    <div className="font-bold text-slate-700 text-sm sm:text-base">{name}</div>
                     <div className="flex items-center space-x-2">
                       <input 
                         type="number" 
                         value={implementers[name].contribution} 
                         onChange={e => handleContributionChange(name, parseInt(e.target.value) || 0)}
-                        className="w-full rounded-xl border border-black/10 bg-white/60 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-black/50 font-bold"
+                        className="w-full rounded-xl border border-black/10 bg-white/70 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-black/50 font-bold text-sm"
                         placeholder="貢獻 %"
                       />
-                      <span className="font-bold text-slate-400">%</span>
+                      <span className="font-bold text-slate-400 text-xs sm:text-sm">%</span>
                     </div>
-                    <div className="text-right font-black text-black hidden sm:block">
+                    <div className="text-right font-black text-black text-sm col-span-2 sm:col-span-1">
                       {formatMoney(implementers[name].amount)}
                     </div>
                   </div>
@@ -1315,6 +1374,28 @@ export default function App() {
       onAdd={() => { setEditingProject(null); setProjectModalOpen(true); }}
       onRowClick={(proj: any) => { setEditingProject(proj); setProjectModalOpen(true); }}
       data={filterData(yearFilteredProjects)}
+      renderMobileCard={(proj: any) => {
+        const netRealizedProfit = getProjectNetProfit(proj);
+        return (
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-black text-slate-400">{proj.projectNumber}</span>
+                {proj.salesRep && <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-slate-100 text-slate-600">{proj.salesRep}</span>}
+              </div>
+              <StatusBadge status={proj.status} />
+            </div>
+            <div className="flex items-baseline justify-between gap-2">
+              <h3 className="font-bold text-base text-black truncate">{proj.client}</h3>
+              <span className="font-black text-sm text-black whitespace-nowrap">{formatMoney(proj.totalAmount)}</span>
+            </div>
+            <div className="flex items-center justify-between text-xs pt-2 border-t border-black/5">
+              <span className="text-slate-500 font-medium">實收淨利: <strong className="text-emerald-600 font-black">{formatMoney(netRealizedProfit)}</strong></span>
+              <span className="text-slate-400 font-medium">{proj.date}</span>
+            </div>
+          </div>
+        );
+      }}
       headers={[
         { label: '編號' },
         { label: '客戶名稱' },
@@ -1402,6 +1483,25 @@ export default function App() {
       onAdd={() => { setEditingExpense(null); setExpenseModalOpen(true); }}
       onRowClick={(exp: any) => { setEditingExpense(exp); setExpenseModalOpen(true); }}
       data={filterData(yearFilteredExpenses)}
+      renderMobileCard={(exp: any) => (
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-black text-slate-700">{exp.expenseNumber || '-'}</span>
+              {exp.linkedProjectNumber && <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-blue-50 text-blue-600 border border-blue-100">{exp.linkedProjectNumber}</span>}
+            </div>
+            <StatusBadge status={exp.status} />
+          </div>
+          <div className="flex items-baseline justify-between gap-2">
+            <h3 className="font-bold text-base text-black truncate">{exp.summary}</h3>
+            <span className="font-black text-sm text-black whitespace-nowrap">{formatMoney(exp.total)}</span>
+          </div>
+          <div className="flex items-center justify-between text-xs pt-2 border-t border-black/5">
+            <span className="text-slate-500 font-medium">付款人: <strong className="text-blue-600">{exp.payer}</strong> ({exp.category})</span>
+            <span className="text-slate-400 font-medium">{exp.date}</span>
+          </div>
+        </div>
+      )}
       headers={[
         { label: '日期' }, { label: '單號' }, { label: '連結案件' }, { label: '類別' }, { label: '摘要(備註)' }, { label: '付款人' }, { label: '發票' }, { label: '已開立' },
         { label: '總額', align: 'text-right' }, { label: '狀態', align: 'text-center' }, { label: '操作', align: 'text-center' }
@@ -1447,6 +1547,28 @@ export default function App() {
       onAdd={() => { setEditingAsset(null); setAssetModalOpen(true); }}
       onRowClick={(asset: any) => { setEditingAsset(asset); setAssetModalOpen(true); }}
       data={filterData(yearFilteredAssets)}
+      renderMobileCard={(asset: any) => {
+        const monthlyAmort = Math.round((asset.cost - asset.residualValue) / (asset.usefulLife * 12));
+        return (
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-black text-slate-700">{asset.assetNumber || '-'}</span>
+                {asset.linkedProjectNumber && <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-purple-50 text-purple-600 border border-purple-100">{asset.linkedProjectNumber}</span>}
+              </div>
+              <span className="text-xs font-bold text-slate-400">{asset.category}</span>
+            </div>
+            <div className="flex items-baseline justify-between gap-2">
+              <h3 className="font-bold text-base text-black truncate">{asset.name}</h3>
+              <span className="font-black text-sm text-black whitespace-nowrap">{formatMoney(asset.cost)}</span>
+            </div>
+            <div className="flex items-center justify-between text-xs pt-2 border-t border-black/5">
+              <span className="text-slate-500 font-medium">月攤提: <strong className="text-rose-600 font-black">{formatMoney(monthlyAmort)}</strong></span>
+              <span className="text-slate-400 font-medium">耐用 {asset.usefulLife} 年</span>
+            </div>
+          </div>
+        );
+      }}
       headers={[
         { label: '單號' }, { label: '名稱' }, { label: '連結案件' }, { label: '購入日' }, { label: '金額', align: 'text-right' }, 
         { label: '年限' }, { label: '月攤提', align: 'text-right' }, { label: '帳面殘值', align: 'text-right' }
