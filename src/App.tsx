@@ -434,11 +434,17 @@ export default function App() {
         }
       }
 
-      // 實作貢獻
+      // 實作貢獻 (依專案實收淨利計算)
       if (p.implementers) {
+        const poolRate = p.implementationPoolRate || 30;
+        const projectProfit = Math.max(0, getProjectNetProfit(p));
         Object.keys(p.implementers).forEach(name => {
           if (implementationTotals[name] !== undefined) {
-            implementationTotals[name] += Number(p.implementers[name].amount) || 0;
+            const contrib = Number(p.implementers[name]?.contribution) || 0;
+            const amount = contrib > 0 
+              ? Math.round(projectProfit * (poolRate / 100) * (contrib / 100))
+              : (Number(p.implementers[name]?.amount) || 0);
+            implementationTotals[name] += amount;
           }
         });
       }
@@ -568,34 +574,53 @@ export default function App() {
       return assets.filter(a => a.linkedProjectNumber === projectNumber);
     }, [assets, projectNumber]);
 
-    const serviceOptions = ['掃描', '逆向', '設計', '模型製作', '量產需求', '外購'];
-    const salesOptions = ['Tim', 'Chris', 'Sam', '無', '其他(備註)'];
-    const invoiceOptions = ['是', '否'];
+    const recalculateImplementers = (
+      netVal = netAmount,
+      outsourcedList = outsourcedItems,
+      poolRate = implementationPoolRate,
+      imps = implementers
+    ) => {
+      const net = Number(netVal) || 0;
+      const currentOutsourced = outsourcedList.reduce((s: number, i: any) => s + (Number(i.amount) || 0), 0);
+      const currentLinkedExpSum = linkedExpenses.reduce((s: number, e: any) => s + (Number(e.total) || 0), 0);
+      const profit = Math.max(0, net * 0.7 - currentOutsourced - currentLinkedExpSum);
+      
+      const newImps: any = {};
+      Object.keys(imps).forEach(name => {
+        const contrib = Number(imps[name]?.contribution) || 0;
+        newImps[name] = {
+          contribution: contrib,
+          amount: Math.round(profit * (poolRate / 100) * (contrib / 100))
+        };
+      });
+      return newImps;
+    };
 
     const handleToggleService = (s: string) => {
       setServices(prev => prev.includes(s) ? prev.filter(x => x !== s) : [...prev, s]);
     };
 
     const handleAddOutsourced = () => {
-      setOutsourcedItems(prev => [...prev, { id: Date.now().toString(), vendor: '', amount: 0 }]);
+      const newList = [...outsourcedItems, { id: Date.now().toString(), vendor: '', amount: 0 }];
+      setOutsourcedItems(newList);
+      setImplementers(recalculateImplementers(netAmount, newList, implementationPoolRate, implementers));
     };
 
     const handleRemoveOutsourced = (id: string) => {
-      setOutsourcedItems(prev => prev.filter(item => item.id !== id));
+      const newList = outsourcedItems.filter(item => item.id !== id);
+      setOutsourcedItems(newList);
+      setImplementers(recalculateImplementers(netAmount, newList, implementationPoolRate, implementers));
     };
 
     const handleOutsourcedItemChange = (id: string, field: string, val: any) => {
-      setOutsourcedItems(prev => prev.map(item => item.id === id ? { ...item, [field]: val } : item));
+      const newList = outsourcedItems.map(item => item.id === id ? { ...item, [field]: val } : item);
+      setOutsourcedItems(newList);
+      setImplementers(recalculateImplementers(netAmount, newList, implementationPoolRate, implementers));
     };
 
     const handlePoolRateChange = (rate: number) => {
       setImplementationPoolRate(rate);
-      const net = Number(netAmount) || 0;
-      const newImps = { ...implementers };
-      Object.keys(newImps).forEach(name => {
-        newImps[name].amount = Math.round(net * (rate / 100) * (newImps[name].contribution / 100));
-      });
-      setImplementers(newImps);
+      setImplementers(recalculateImplementers(netAmount, outsourcedItems, rate, implementers));
     };
 
     const handleNetAmountChange = (val: string) => {
@@ -605,24 +630,16 @@ export default function App() {
       setNetAmount(val);
       setTaxAmount(tax.toString());
       setTotalAmount(total.toString());
-      
-      // 更新實作人員金額
-      const newImps = { ...implementers };
-      Object.keys(newImps).forEach(name => {
-        newImps[name].amount = Math.round(net * (implementationPoolRate / 100) * (newImps[name].contribution / 100));
-      });
-      setImplementers(newImps);
+      setImplementers(recalculateImplementers(val, outsourcedItems, implementationPoolRate, implementers));
     };
 
     const handleContributionChange = (name: string, val: number) => {
       const contribution = Math.min(100, Math.max(0, val));
-      const net = Number(netAmount) || 0;
-      const amount = Math.round(net * (implementationPoolRate / 100) * (contribution / 100));
-      
-      setImplementers({
+      const updatedImps = {
         ...implementers,
-        [name]: { contribution, amount }
-      });
+        [name]: { ...implementers[name], contribution }
+      };
+      setImplementers(recalculateImplementers(netAmount, outsourcedItems, implementationPoolRate, updatedImps));
     };
 
     const handleSubmit = async (e: React.FormEvent) => {
@@ -844,7 +861,7 @@ export default function App() {
             <div className="border-t border-black/5 pt-5">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-3 gap-2">
                 <label className="block text-sm font-bold text-slate-700">
-                  實作人員與貢獻 (分配未稅金額 % 數)
+                  實作人員與貢獻 (分配實收淨利 % 數)
                 </label>
                 <div className="flex bg-white/60 p-1 rounded-xl border border-black/10 text-xs font-bold self-start sm:self-auto shadow-sm">
                   <button 
