@@ -343,13 +343,24 @@ export default function App() {
       .reduce((sum: number, e: any) => sum + (Number(e.total) || 0), 0);
   };
 
-  // 案件實收淨利計算 (獎金30%時未稅扣除額為70%；獎金50%時未稅扣除額為50% - 外包金額 - 連結報支金額)
+  // 業務獎金計算 (非'無'時，舊客戶扣5%，新客戶扣15%，可自訂基本與新客加碼%)
+  const getProjectSalesBonus = (p: any) => {
+    if (!p.salesRep || p.salesRep === '無') return 0;
+    const net = Number(p.netAmount) || 0;
+    const baseRate = p.baseBonusRate !== undefined && p.baseBonusRate !== '' ? Number(p.baseBonusRate) : 5;
+    const newClientRate = p.newClientBonusRate !== undefined && p.newClientBonusRate !== '' ? Number(p.newClientBonusRate) : 10;
+    const totalRate = baseRate + (p.isNewClient === '是' ? newClientRate : 0);
+    return Math.round(net * (totalRate / 100));
+  };
+
+  // 案件實收淨利計算 (未稅扣除額 - 業務獎金扣除 - 外包金額 - 連結報支金額)
   const getProjectNetProfit = (p: any) => {
     const deductionRate = p.implementationPoolRate === 50 ? 0.5 : 0.7;
     const netDeduction = (Number(p.netAmount) || 0) * deductionRate;
+    const salesBonus = getProjectSalesBonus(p);
     const outsourced = getProjectOutsourcedTotal(p);
     const linkedExpensesTotal = getProjectLinkedExpensesTotal(p.projectNumber);
-    return netDeduction - outsourced - linkedExpensesTotal;
+    return netDeduction - salesBonus - outsourced - linkedExpensesTotal;
   };
 
   // 根據年度篩選與自動排序 (進行中與待核銷排上方)
@@ -402,31 +413,26 @@ export default function App() {
     const implementationTotals: any = { Tim: 0, Chris: 0, Sam: 0 };
 
     completedProjects.forEach(p => {
-      const net = Number(p.netAmount) || 0;
-      const rep = p.salesRep;
+      const rep = p.salesRep === 'T' ? 'Tim' : p.salesRep === 'C' ? 'Chris' : p.salesRep === 'S' ? 'Sam' : p.salesRep;
+      const salesBonus = getProjectSalesBonus(p);
       
-      // 業務獎金: 可依各張單單獨設定基本%數與新客%數
+      // 業務獎金: 為每一筆"已完成"的專案中，業務可得的金額 (舊客扣5%，新客扣15%)
       if (salesCommissions[rep] !== undefined) {
-        const baseRate = p.baseBonusRate !== undefined ? Number(p.baseBonusRate) : 5;
-        const newClientRate = p.newClientBonusRate !== undefined ? Number(p.newClientBonusRate) : 10;
-        
-        salesCommissions[rep] += net * (baseRate / 100);
-        if (p.isNewClient === '是') {
-          salesCommissions[rep] += net * (newClientRate / 100);
-        }
+        salesCommissions[rep] += salesBonus;
       }
 
-      // 實作貢獻 (依專案實收淨利計算)
+      // 實作貢獻: 為每一筆"已完成"的專案中各自分配的金額總和 (依扣除業務獎金後的實收淨利計算)
       if (p.implementers) {
         const poolRate = p.implementationPoolRate || 30;
         const projectProfit = Math.max(0, getProjectNetProfit(p));
         Object.keys(p.implementers).forEach(name => {
-          if (implementationTotals[name] !== undefined) {
+          const normName = name === 'T' ? 'Tim' : name === 'C' ? 'Chris' : name === 'S' ? 'Sam' : name;
+          if (implementationTotals[normName] !== undefined) {
             const contrib = Number(p.implementers[name]?.contribution) || 0;
             const amount = contrib > 0 
               ? Math.round(projectProfit * (poolRate / 100) * (contrib / 100))
               : (Number(p.implementers[name]?.amount) || 0);
-            implementationTotals[name] += amount;
+            implementationTotals[normName] += amount;
           }
         });
       }
@@ -564,13 +570,21 @@ export default function App() {
       netVal = netAmount,
       outsourcedList = outsourcedItems,
       poolRate = implementationPoolRate,
-      imps = implementers
+      imps = implementers,
+      rep = salesRep,
+      newClient = isNewClient,
+      bRate = baseBonusRate,
+      ncRate = newClientBonusRate
     ) => {
       const net = Number(netVal) || 0;
       const currentOutsourced = outsourcedList.reduce((s: number, i: any) => s + (Number(i.amount) || 0), 0);
       const currentLinkedExpSum = linkedExpenses.reduce((s: number, e: any) => s + (Number(e.total) || 0), 0);
       const deductionRate = poolRate === 50 ? 0.5 : 0.7;
-      const profit = Math.max(0, net * deductionRate - currentOutsourced - currentLinkedExpSum);
+      
+      const bonusRate = rep === '無' ? 0 : ((Number(bRate) || 5) + (newClient === '是' ? (Number(ncRate) || 10) : 0));
+      const sBonus = Math.round(net * (bonusRate / 100));
+
+      const profit = Math.max(0, net * deductionRate - sBonus - currentOutsourced - currentLinkedExpSum);
       
       const newImps: any = {};
       Object.keys(imps).forEach(name => {
@@ -618,6 +632,26 @@ export default function App() {
       setTaxAmount(tax.toString());
       setTotalAmount(total.toString());
       setImplementers(recalculateImplementers(val, outsourcedItems, implementationPoolRate, implementers));
+    };
+
+    const handleSalesRepChange = (rep: string) => {
+      setSalesRep(rep);
+      setImplementers(recalculateImplementers(netAmount, outsourcedItems, implementationPoolRate, implementers, rep, isNewClient, baseBonusRate, newClientBonusRate));
+    };
+
+    const handleIsNewClientChange = (val: string) => {
+      setIsNewClient(val);
+      setImplementers(recalculateImplementers(netAmount, outsourcedItems, implementationPoolRate, implementers, salesRep, val, baseBonusRate, newClientBonusRate));
+    };
+
+    const handleBaseBonusRateChange = (val: string) => {
+      setBaseBonusRate(val);
+      setImplementers(recalculateImplementers(netAmount, outsourcedItems, implementationPoolRate, implementers, salesRep, isNewClient, val, newClientBonusRate));
+    };
+
+    const handleNewClientBonusRateChange = (val: string) => {
+      setNewClientBonusRate(val);
+      setImplementers(recalculateImplementers(netAmount, outsourcedItems, implementationPoolRate, implementers, salesRep, isNewClient, baseBonusRate, val));
     };
 
     const handleContributionChange = (name: string, val: number) => {
@@ -759,7 +793,11 @@ export default function App() {
               const currentLinkedExpSum = linkedExpenses.reduce((s, e) => s + (Number(e.total) || 0), 0);
               const deductionRate = implementationPoolRate === 50 ? 0.5 : 0.7;
               const currentNetDeduction = (Number(netAmount) || 0) * deductionRate;
-              const liveNetProfit = currentNetDeduction - currentOutsourced - currentLinkedExpSum;
+              
+              const bonusRate = salesRep === '無' ? 0 : ((Number(baseBonusRate) || 5) + (isNewClient === '是' ? (Number(newClientBonusRate) || 10) : 0));
+              const currentSalesBonus = Math.round((Number(netAmount) || 0) * (bonusRate / 100));
+
+              const liveNetProfit = currentNetDeduction - currentSalesBonus - currentOutsourced - currentLinkedExpSum;
 
               return (
                 <div className="p-5 rounded-3xl bg-gradient-to-br from-slate-900 via-slate-800 to-black text-white shadow-xl space-y-3">
@@ -771,10 +809,14 @@ export default function App() {
                       {formatMoney(liveNetProfit)}
                     </span>
                   </div>
-                  <div className="grid grid-cols-3 gap-2 text-[11px] font-bold">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px] font-bold">
                     <div className="bg-white/10 p-2.5 rounded-2xl">
                       <span className="text-slate-400 block mb-0.5">未稅 {implementationPoolRate === 50 ? '50%' : '70%'} 扣除額</span>
                       <span className="text-white font-black text-xs">{formatMoney(currentNetDeduction)}</span>
+                    </div>
+                    <div className="bg-white/10 p-2.5 rounded-2xl">
+                      <span className="text-sky-300 block mb-0.5">業務獎金扣除 ({bonusRate}%)</span>
+                      <span className="text-sky-400 font-black text-xs">-{formatMoney(currentSalesBonus)}</span>
                     </div>
                     <div className="bg-white/10 p-2.5 rounded-2xl">
                       <span className="text-rose-300 block mb-0.5">外包扣除 (-)</span>
@@ -794,7 +836,7 @@ export default function App() {
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div>
                   <label className="block text-sm font-bold text-slate-700 mb-1">業務</label>
-                  <select value={salesRep} onChange={e => setSalesRep(e.target.value)} className="w-full rounded-xl border border-black/10 bg-white/60 px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-black/50 font-bold text-slate-800">
+                  <select value={salesRep} onChange={e => handleSalesRepChange(e.target.value)} className="w-full rounded-xl border border-black/10 bg-white/60 px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-black/50 font-bold text-slate-800">
                     {salesOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
                   </select>
                   {salesRep === '其他(備註)' && (
@@ -803,7 +845,7 @@ export default function App() {
                 </div>
                 <div>
                   <label className="block text-sm font-bold text-slate-700 mb-1">新客戶</label>
-                  <select value={isNewClient} onChange={e => setIsNewClient(e.target.value)} className="w-full rounded-xl border border-black/10 bg-white/60 px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-black/50 font-bold text-slate-800">
+                  <select value={isNewClient} onChange={e => handleIsNewClientChange(e.target.value)} className="w-full rounded-xl border border-black/10 bg-white/60 px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-black/50 font-bold text-slate-800">
                     <option value="是">是</option>
                     <option value="否">否</option>
                   </select>
@@ -823,7 +865,7 @@ export default function App() {
                     <input 
                       type="number" 
                       value={baseBonusRate} 
-                      onChange={e => setBaseBonusRate(e.target.value)} 
+                      onChange={e => handleBaseBonusRateChange(e.target.value)} 
                       className="w-full rounded-xl border border-black/10 bg-white/60 px-3 py-2 font-black" 
                       placeholder="5" 
                     />
@@ -836,7 +878,7 @@ export default function App() {
                     <input 
                       type="number" 
                       value={newClientBonusRate} 
-                      onChange={e => setNewClientBonusRate(e.target.value)} 
+                      onChange={e => handleNewClientBonusRateChange(e.target.value)} 
                       className="w-full rounded-xl border border-black/10 bg-white/60 px-3 py-2 font-black" 
                       placeholder="10" 
                     />
