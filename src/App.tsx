@@ -85,23 +85,8 @@ class ErrorBoundary extends Component<{children: React.ReactNode}, {hasError: bo
   }
 }
 
-// --- 自訂 CSS 樣式 (流體動畫與隱藏滾動條) ---
+// --- 自訂 CSS 樣式 (輕量化) ---
 const customStyles = `
-  @keyframes blob {
-    0% { transform: translate(0px, 0px) scale(1); }
-    33% { transform: translate(30px, -50px) scale(1.1); }
-    66% { transform: translate(-20px, 20px) scale(0.9); }
-    100% { transform: translate(0px, 0px) scale(1); }
-  }
-  .animate-blob {
-    animation: blob 10s infinite alternate;
-  }
-  .animation-delay-2000 {
-    animation-delay: 2s;
-  }
-  .animation-delay-4000 {
-    animation-delay: 4s;
-  }
   .no-scrollbar::-webkit-scrollbar {
     display: none;
   }
@@ -110,18 +95,14 @@ const customStyles = `
     scrollbar-width: none;
   }
   .glass-panel {
-    background: rgba(255, 255, 255, 0.65);
-    backdrop-filter: blur(20px);
-    -webkit-backdrop-filter: blur(20px);
-    border: 1px solid rgba(255, 255, 255, 0.8);
-    box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.03);
+    background: rgba(255, 255, 255, 0.92);
+    border: 1px solid rgba(0, 0, 0, 0.06);
+    box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.04);
   }
   .glass-modal {
-    background: rgba(255, 255, 255, 0.85);
-    backdrop-filter: blur(25px);
-    -webkit-backdrop-filter: blur(25px);
-    border: 1px solid rgba(255, 255, 255, 0.5);
-    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+    background: #fff;
+    border: 1px solid rgba(0, 0, 0, 0.08);
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.15);
   }
 `;
 
@@ -153,19 +134,19 @@ const StatusBadge = ({ status }: { status: string }) => {
     style = { background: '#ff3b30', color: '#fff' };
   }
   return (
-    <span className="px-3 py-1.5 text-xs font-bold rounded-full tracking-wider shadow-sm transition-transform hover:scale-105" style={style}>
+    <span className="px-3 py-1.5 text-xs font-bold rounded-full tracking-wider shadow-sm" style={style}>
       {status}
     </span>
   );
 };
 
 const TableView = ({ title, buttonText, headers, renderRow, renderMobileCard, data, onAdd, onRowClick }: any) => (
-  <div className="glass-panel rounded-3xl flex flex-col h-full overflow-hidden animate-in fade-in zoom-in-95 duration-300">
+  <div className="glass-panel rounded-3xl flex flex-col h-full overflow-hidden">
     <div className="p-4 sm:p-6 lg:p-8 border-b border-black/5 flex justify-between items-center bg-white/20">
       <h2 className="text-xl sm:text-2xl font-black text-black tracking-tight">{title}</h2>
       <button 
         onClick={onAdd}
-        className="bg-black text-white px-4 py-2.5 sm:px-5 sm:py-2.5 rounded-full text-xs sm:text-sm font-bold hover:scale-105 active:scale-95 transition-all flex items-center shadow-lg"
+        className="bg-black text-white px-4 py-2.5 sm:px-5 sm:py-2.5 rounded-full text-xs sm:text-sm font-bold hover:bg-slate-800 transition-colors flex items-center shadow-lg"
       >
         <Plus size={16} className="mr-1 sm:mr-1.5" strokeWidth={3} /> {buttonText}
       </button>
@@ -182,7 +163,7 @@ const TableView = ({ title, buttonText, headers, renderRow, renderMobileCard, da
             <div 
               key={idx}
               onClick={() => onRowClick && onRowClick(row)}
-              className="bg-white/70 hover:bg-white/95 active:scale-[0.99] transition-all shadow-sm rounded-2xl p-4 border border-black/5 space-y-2.5 cursor-pointer"
+              className="bg-white/70 hover:bg-white/95 shadow-sm rounded-2xl p-4 border border-black/5 space-y-2.5 cursor-pointer"
             >
               {renderMobileCard ? renderMobileCard(row, idx) : (
                 <div className="flex justify-between items-center">
@@ -707,8 +688,8 @@ export default function App() {
     };
 
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4 overflow-y-auto">
-        <div className="glass-modal w-full max-w-2xl rounded-3xl p-6 md:p-8 animate-in zoom-in-95 duration-200 my-auto max-h-[95vh] overflow-y-auto">
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 overflow-y-auto">
+        <div className="glass-modal w-full max-w-2xl rounded-3xl p-6 md:p-8 my-auto max-h-[95vh] overflow-y-auto">
           <div className="flex justify-between items-center mb-6">
             <h2 className="text-2xl font-black text-black">{editingProject ? '更新案件' : '新增案件'}</h2>
             <button onClick={() => { setProjectModalOpen(false); setEditingProject(null); }} className="p-2 hover:bg-black/5 rounded-full transition-colors">
@@ -719,7 +700,7 @@ export default function App() {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-bold text-slate-700 mb-1">案件編號</label>
-                <input required type="text" value={projectNumber} onChange={e => setProjectNumber(e.target.value)} className="w-full rounded-xl border border-black/10 bg-white/60 px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-black/50 transition-all font-bold" />
+                <input required type="text" value={projectNumber} onChange={e => setProjectNumber(e.target.value)} className="w-full rounded-xl border border-black/10 bg-white/60 px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-black/50 font-bold" />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
@@ -740,7 +721,7 @@ export default function App() {
             </div>
             <div>
               <label className="block text-sm font-bold text-slate-700 mb-1">客戶名稱</label>
-              <input required type="text" value={client} onChange={e => setClient(e.target.value)} className="w-full rounded-xl border border-black/10 bg-white/60 px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-black/50 transition-all font-bold" placeholder="輸入客戶名稱" />
+              <input required type="text" value={client} onChange={e => setClient(e.target.value)} className="w-full rounded-xl border border-black/10 bg-white/60 px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-black/50 font-bold" placeholder="輸入客戶名稱" />
             </div>
             
             <div>
@@ -758,7 +739,7 @@ export default function App() {
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div>
                 <label className="block text-sm font-bold text-slate-700 mb-1">未稅金額</label>
-                <input required type="number" value={netAmount} onChange={e => handleNetAmountChange(e.target.value)} className="w-full rounded-xl border border-black/10 bg-white/60 px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-black/50 transition-all font-black text-lg" placeholder="NT$" />
+                <input required type="number" value={netAmount} onChange={e => handleNetAmountChange(e.target.value)} className="w-full rounded-xl border border-black/10 bg-white/60 px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-black/50 font-black text-lg" placeholder="NT$" />
               </div>
               <div>
                 <label className="block text-sm font-bold text-slate-700 mb-1">稅金 (5%)</label>
@@ -814,7 +795,7 @@ export default function App() {
                     {salesOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
                   </select>
                   {salesRep === '其他(備註)' && (
-                    <input required type="text" value={otherRep} onChange={e => setOtherRep(e.target.value)} className="w-full rounded-xl border border-black/10 bg-white/60 px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-black/50 transition-all font-bold mt-2" placeholder="請填寫業務備註" />
+                    <input required type="text" value={otherRep} onChange={e => setOtherRep(e.target.value)} className="w-full rounded-xl border border-black/10 bg-white/60 px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-black/50 font-bold mt-2" placeholder="請填寫業務備註" />
                   )}
                 </div>
                 <div>
@@ -871,14 +852,14 @@ export default function App() {
                   <button 
                     type="button"
                     onClick={() => handlePoolRateChange(30)}
-                    className={`px-3 py-1 rounded-lg transition-all ${implementationPoolRate === 30 ? 'bg-black text-white shadow-sm font-black' : 'text-slate-500 hover:text-black'}`}
+                    className={`px-3 py-1 rounded-lg transition-colors ${implementationPoolRate === 30 ? 'bg-black text-white shadow-sm font-black' : 'text-slate-500 hover:text-black'}`}
                   >
                     30% 獎金池
                   </button>
                   <button 
                     type="button"
                     onClick={() => handlePoolRateChange(50)}
-                    className={`px-3 py-1 rounded-lg transition-all ${implementationPoolRate === 50 ? 'bg-black text-white shadow-sm font-black' : 'text-slate-500 hover:text-black'}`}
+                    className={`px-3 py-1 rounded-lg transition-colors ${implementationPoolRate === 50 ? 'bg-black text-white shadow-sm font-black' : 'text-slate-500 hover:text-black'}`}
                   >
                     50% 獎金池
                   </button>
@@ -913,7 +894,7 @@ export default function App() {
                 <button 
                   type="button" 
                   onClick={handleAddOutsourced}
-                  className="text-xs font-bold bg-slate-900 text-white px-3 py-1.5 rounded-full hover:bg-black transition-all flex items-center space-x-1 shadow-sm"
+                  className="text-xs font-bold bg-slate-900 text-white px-3 py-1.5 rounded-full hover:bg-black transition-colors flex items-center space-x-1 shadow-sm"
                 >
                   <Plus size={14} /> <span>新增外包廠商</span>
                 </button>
@@ -963,7 +944,7 @@ export default function App() {
                     setEditingExpense({ linkedProjectNumber: projectNumber });
                     setExpenseModalOpen(true);
                   }}
-                  className="text-xs font-bold bg-amber-600 text-white px-3 py-1.5 rounded-full hover:bg-amber-700 transition-all flex items-center space-x-1 shadow-sm"
+                  className="text-xs font-bold bg-amber-600 text-white px-3 py-1.5 rounded-full hover:bg-amber-700 transition-colors flex items-center space-x-1 shadow-sm"
                 >
                   <Plus size={14} /> <span>連結新報支</span>
                 </button>
@@ -1036,7 +1017,7 @@ export default function App() {
               <button type="button" onClick={() => { setProjectModalOpen(false); setEditingProject(null); }} className="flex-1 bg-slate-200 text-slate-700 rounded-xl py-3.5 font-black text-lg hover:bg-slate-300 transition-colors order-2">
                 取消
               </button>
-              <button type="submit" className="flex-[2] bg-black text-white rounded-xl py-3.5 font-black text-lg hover:scale-[1.02] transition-transform shadow-lg order-1 sm:order-3">
+              <button type="submit" className="flex-[2] bg-black text-white rounded-xl py-3.5 font-black text-lg hover:bg-slate-800 transition-colors shadow-lg order-1 sm:order-3">
                 {editingProject ? '更新案件' : '建立案件'}
               </button>
             </div>
@@ -1125,8 +1106,8 @@ export default function App() {
     };
 
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4 overflow-y-auto">
-        <div className="glass-modal w-full max-w-lg rounded-3xl p-6 md:p-8 animate-in zoom-in-95 duration-200 my-auto max-h-[95vh] overflow-y-auto">
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 overflow-y-auto">
+        <div className="glass-modal w-full max-w-lg rounded-3xl p-6 md:p-8 my-auto max-h-[95vh] overflow-y-auto">
           <div className="flex justify-between items-center mb-6">
             <h2 className="text-2xl font-black text-black">{editingExpense ? '更新報支' : '新增報支與進項'}</h2>
             <button onClick={() => { setExpenseModalOpen(false); setEditingExpense(null); }} className="p-2 hover:bg-black/5 rounded-full transition-colors">
@@ -1171,13 +1152,13 @@ export default function App() {
               </div>
               <div className="col-span-1 sm:col-span-2">
                 <label className="block text-sm font-bold text-slate-700 mb-1">金額</label>
-                <input required type="number" value={amount} onChange={e => setAmount(e.target.value)} className="w-full rounded-xl border border-black/10 bg-white/60 px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-black/50 transition-all font-black text-lg" placeholder="NT$" />
+                <input required type="number" value={amount} onChange={e => setAmount(e.target.value)} className="w-full rounded-xl border border-black/10 bg-white/60 px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-black/50 font-black text-lg" placeholder="NT$" />
               </div>
             </div>
             
             <div>
               <label className="block text-sm font-bold text-slate-700 mb-1">備註 (摘要)</label>
-              <input type="text" value={notes} onChange={e => setNotes(e.target.value)} className="w-full rounded-xl border border-black/10 bg-white/60 px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-black/50 transition-all font-bold" placeholder="輸入報支說明" />
+              <input type="text" value={notes} onChange={e => setNotes(e.target.value)} className="w-full rounded-xl border border-black/10 bg-white/60 px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-black/50 font-bold" placeholder="輸入報支說明" />
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -1223,7 +1204,7 @@ export default function App() {
               <button type="button" onClick={() => { setExpenseModalOpen(false); setEditingExpense(null); }} className="flex-1 bg-slate-200 text-slate-700 rounded-xl py-3.5 font-black text-lg hover:bg-slate-300 transition-colors order-2">
                 取消
               </button>
-              <button type="submit" className="flex-[2] bg-black text-white rounded-xl py-3.5 font-black text-lg hover:scale-[1.02] transition-transform shadow-lg order-1 sm:order-3">
+              <button type="submit" className="flex-[2] bg-black text-white rounded-xl py-3.5 font-black text-lg hover:bg-slate-800 transition-colors shadow-lg order-1 sm:order-3">
                 {editingExpense ? '更新報支' : '提交報支'}
               </button>
             </div>
@@ -1302,7 +1283,7 @@ export default function App() {
 
   // --- 畫面元件區 ---
   const DashboardView = () => (
-    <div className="space-y-6 md:space-y-10 animate-in fade-in slide-in-from-bottom-4 duration-700">
+    <div className="space-y-6 md:space-y-10">
       {/* KPI Stats Bento Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
         {[
@@ -1311,10 +1292,10 @@ export default function App() {
           { title: '預估應納稅額', value: financials.taxPayable, icon: FileText, color: 'text-rose-600', bg: 'bg-rose-50', border: 'border-rose-100' },
           { title: '可分配紅利', value: financials.distributableDividend, icon: Users, color: 'text-purple-600', bg: 'bg-purple-50', border: 'border-purple-100' }
         ].map((kpi, idx) => (
-          <div key={idx} className={`glass-panel rounded-[2rem] p-6 border ${kpi.border} transition-all duration-500 hover:shadow-xl hover:-translate-y-1 group relative overflow-hidden`}>
-            <div className={`absolute top-0 right-0 w-24 h-24 -mr-8 -mt-8 rounded-full ${kpi.bg} opacity-50 group-hover:scale-150 transition-transform duration-700`}></div>
+          <div key={idx} className={`glass-panel rounded-[2rem] p-6 border ${kpi.border} relative overflow-hidden shadow-sm`}>
+            <div className={`absolute top-0 right-0 w-24 h-24 -mr-8 -mt-8 rounded-full ${kpi.bg} opacity-40`}></div>
             <div className="relative z-10 flex flex-col justify-between h-full">
-              <div className={`w-12 h-12 rounded-2xl ${kpi.bg} ${kpi.color} flex items-center justify-center mb-4 group-hover:bg-black group-hover:text-white transition-colors duration-500`}>
+              <div className={`w-12 h-12 rounded-2xl ${kpi.bg} ${kpi.color} flex items-center justify-center mb-4`}>
                 <kpi.icon size={24} strokeWidth={2.5} />
               </div>
               <div>
@@ -1337,7 +1318,7 @@ export default function App() {
           <div className="space-y-4 flex-1">
             {filterData(yearFilteredProjects).length === 0 && <p className="text-slate-400 text-center font-bold mt-10">尚無案件</p>}
             {filterData(yearFilteredProjects).slice(0, 4).map((proj, idx) => (
-              <div key={idx} className="flex justify-between items-center p-4 bg-white/40 rounded-2xl hover:bg-white/80 transition-all hover:shadow-md border border-transparent hover:border-white/60">
+              <div key={idx} className="flex justify-between items-center p-4 bg-white/40 rounded-2xl hover:bg-white/80 transition-colors border border-black/5">
                 <div className="flex items-center space-x-4">
                   <div className="h-12 w-12 rounded-2xl bg-black flex items-center justify-center text-white font-black text-[10px] shadow-md">
                     {proj.date}
@@ -1366,7 +1347,7 @@ export default function App() {
           <div className="space-y-4 flex-1">
             {filterData(yearFilteredExpenses).length === 0 && <p className="text-slate-400 text-center font-bold mt-10">尚無報支記錄</p>}
             {filterData(yearFilteredExpenses).slice(0, 4).map((exp, idx) => (
-              <div key={idx} className="flex justify-between items-center p-4 bg-white/40 rounded-2xl hover:bg-white/80 transition-all hover:shadow-md border border-transparent hover:border-white/60">
+              <div key={idx} className="flex justify-between items-center p-4 bg-white/40 rounded-2xl hover:bg-white/80 transition-colors border border-black/5">
                 <div className="flex items-center space-x-4">
                   <div className="h-12 w-12 rounded-2xl bg-white border border-black/10 flex items-center justify-center text-black font-black text-[10px] shadow-sm">
                     {exp.date}
@@ -1550,7 +1531,7 @@ export default function App() {
                     handleFirestoreError(err, 'update', 'expenses');
                   }
                 }}
-                className="text-xs font-bold bg-black text-white px-3 py-1.5 rounded-full hover:scale-105 transition-transform"
+                className="text-xs font-bold bg-black text-white px-3 py-1.5 rounded-full hover:bg-slate-800 transition-colors"
               >
                 核准
               </button>
@@ -1688,8 +1669,8 @@ export default function App() {
     };
 
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4 overflow-y-auto">
-        <div className="glass-modal w-full max-w-lg rounded-3xl p-6 md:p-8 animate-in zoom-in-95 duration-200 my-auto max-h-[95vh] overflow-y-auto">
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 overflow-y-auto">
+        <div className="glass-modal w-full max-w-lg rounded-3xl p-6 md:p-8 my-auto max-h-[95vh] overflow-y-auto">
           <div className="flex justify-between items-center mb-6">
             <h2 className="text-2xl font-black text-black">{editingAsset ? '更新資產' : '登記新資產'}</h2>
             <button onClick={() => { setAssetModalOpen(false); setEditingAsset(null); }} className="p-2 hover:bg-black/5 rounded-full transition-colors">
@@ -1769,7 +1750,7 @@ export default function App() {
               <button type="button" onClick={() => { setAssetModalOpen(false); setEditingAsset(null); }} className="flex-1 bg-slate-200 text-slate-700 rounded-xl py-3.5 font-black text-lg hover:bg-slate-300 transition-colors order-2">
                 取消
               </button>
-              <button type="submit" className="flex-[2] bg-black text-white rounded-xl py-3.5 font-black text-lg hover:scale-[1.02] transition-transform shadow-lg order-1 sm:order-3">
+              <button type="submit" className="flex-[2] bg-black text-white rounded-xl py-3.5 font-black text-lg hover:bg-slate-800 transition-colors shadow-lg order-1 sm:order-3">
                 {editingAsset ? '更新資產' : '登記資產'}
               </button>
             </div>
@@ -1835,7 +1816,7 @@ export default function App() {
       if (active && payload && payload.length) {
         const data = payload[0].payload;
         return (
-          <div className="bg-white/90 backdrop-blur-md p-4 rounded-2xl shadow-xl border border-black/5">
+          <div className="bg-white p-4 rounded-2xl shadow-xl border border-black/5">
             <p className="font-black text-lg mb-2">{data.name} 股東明細</p>
             <div className="space-y-1 text-sm font-bold">
               <div className="flex justify-between gap-8">
@@ -1862,7 +1843,7 @@ export default function App() {
     };
 
     return (
-      <div className="space-y-6 lg:space-y-8 animate-in fade-in duration-500">
+      <div className="space-y-6 lg:space-y-8">
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 lg:gap-8">
           {/* 財務匯總卡片 */}
           <div className="glass-panel rounded-3xl flex flex-col">
@@ -1896,7 +1877,7 @@ export default function App() {
                   <span className="font-bold text-slate-500">(G) 公積提列 (10%)</span>
                   <span className="font-black text-black">{formatMoney(financials.legalReserve)}</span>
                 </div>
-                <div className="flex justify-between items-center py-5 bg-black text-white px-6 rounded-2xl mt-6 shadow-xl transform transition-transform hover:scale-[1.02]">
+                <div className="flex justify-between items-center py-5 bg-black text-white px-6 rounded-2xl mt-6 shadow-xl">
                   <span className="font-bold tracking-widest uppercase text-sm">(H) 可分配紅利</span>
                   <span className="font-black text-2xl tracking-tight">{formatMoney(financials.distributableDividend)}</span>
                 </div>
@@ -1908,7 +1889,7 @@ export default function App() {
           <div className="glass-panel rounded-3xl flex flex-col">
             <div className="p-8 border-b border-black/5 bg-white/20 flex justify-between items-center">
               <h2 className="text-2xl font-black text-black tracking-tight">股東分配</h2>
-              <button className="w-10 h-10 rounded-full bg-white flex items-center justify-center shadow-sm hover:scale-110 transition-transform">
+              <button className="w-10 h-10 rounded-full bg-white flex items-center justify-center shadow-sm hover:bg-slate-100 transition-colors">
                 <ArrowDown size={20} strokeWidth={3} />
               </button>
             </div>
@@ -1995,7 +1976,7 @@ export default function App() {
             <button 
               onClick={handleConfirmTax}
               disabled={isSaving}
-              className="w-full mt-4 bg-black text-white rounded-xl py-2.5 font-bold text-sm hover:scale-[1.02] transition-transform shadow-md disabled:opacity-50"
+              className="w-full mt-4 bg-black text-white rounded-xl py-2.5 font-bold text-sm hover:bg-slate-800 transition-colors shadow-md disabled:opacity-50"
             >
               {isSaving ? '儲存中...' : '確認更新稅金'}
             </button>
@@ -2044,12 +2025,6 @@ export default function App() {
     return (
       <div className="h-screen w-screen flex items-center justify-center bg-slate-50 relative overflow-hidden">
         <style dangerouslySetInnerHTML={{ __html: customStyles }} />
-        <div className="absolute inset-0 z-0 pointer-events-none">
-          <div className="absolute top-[-10%] left-[-10%] w-[50vw] h-[50vw] rounded-full bg-blue-400/20 mix-blend-multiply filter blur-[100px] animate-blob"></div>
-          <div className="absolute top-[20%] right-[-10%] w-[40vw] h-[40vw] rounded-full bg-rose-300/20 mix-blend-multiply filter blur-[100px] animate-blob animation-delay-2000"></div>
-          <div className="absolute bottom-[-20%] left-[20%] w-[60vw] h-[60vw] rounded-full bg-purple-300/20 mix-blend-multiply filter blur-[100px] animate-blob animation-delay-4000"></div>
-          <div className="absolute inset-0 bg-white/60 backdrop-blur-[4px]"></div>
-        </div>
         <div className="relative z-10 flex flex-col items-center">
           <div className="animate-pulse text-2xl font-black text-black tracking-widest uppercase">系統載入中...</div>
         </div>
@@ -2061,15 +2036,9 @@ export default function App() {
     return (
       <div className="h-screen w-screen flex justify-center items-center bg-slate-50 relative overflow-hidden font-sans selection:bg-black selection:text-white">
         <style dangerouslySetInnerHTML={{ __html: customStyles }} />
-        <div className="absolute inset-0 z-0 pointer-events-none">
-          <div className="absolute top-[-10%] left-[-10%] w-[50vw] h-[50vw] rounded-full bg-blue-400/20 mix-blend-multiply filter blur-[100px] animate-blob"></div>
-          <div className="absolute top-[20%] right-[-10%] w-[40vw] h-[40vw] rounded-full bg-rose-300/20 mix-blend-multiply filter blur-[100px] animate-blob animation-delay-2000"></div>
-          <div className="absolute bottom-[-20%] left-[20%] w-[60vw] h-[60vw] rounded-full bg-purple-300/20 mix-blend-multiply filter blur-[100px] animate-blob animation-delay-4000"></div>
-          <div className="absolute inset-0 bg-white/60 backdrop-blur-[4px]"></div>
-        </div>
         
-        <div className="glass-modal relative z-10 w-full max-w-md p-10 md:p-12 rounded-[2.5rem] flex flex-col items-center shadow-2xl animate-in zoom-in-95 duration-500 m-4">
-          <div className="w-20 h-20 bg-black rounded-3xl flex items-center justify-center text-white font-black text-4xl shadow-xl shadow-black/20 rotate-3 mb-8 hover:rotate-12 transition-transform cursor-default">
+        <div className="glass-modal relative z-10 w-full max-w-md p-10 md:p-12 rounded-[2.5rem] flex flex-col items-center shadow-2xl m-4">
+          <div className="w-20 h-20 bg-black rounded-3xl flex items-center justify-center text-white font-black text-4xl shadow-xl shadow-black/20 rotate-3 mb-8 cursor-default">
             Y
           </div>
           <h1 className="text-3xl font-black tracking-tighter text-black mb-2">源創系統</h1>
@@ -2077,9 +2046,9 @@ export default function App() {
           
           <button 
             onClick={handleLogin}
-            className="w-full flex items-center justify-center space-x-3 bg-black text-white p-4 rounded-2xl hover:scale-105 active:scale-95 transition-all shadow-lg hover:shadow-xl group"
+            className="w-full flex items-center justify-center space-x-3 bg-black text-white p-4 rounded-2xl hover:bg-slate-800 transition-colors shadow-lg group"
           >
-            <LogIn size={20} className="group-hover:translate-x-1 transition-transform" />
+            <LogIn size={20} />
             <span className="font-bold text-lg tracking-wide">Google 帳號登入</span>
           </button>
         </div>
@@ -2091,14 +2060,6 @@ export default function App() {
     <ErrorBoundary>
       <div className="flex flex-col md:flex-row h-screen font-sans relative z-10 text-slate-800 selection:bg-black selection:text-white bg-slate-50 overflow-hidden">
       <style dangerouslySetInnerHTML={{ __html: customStyles }} />
-      
-      {/* 流體背景 (Fluid Background) */}
-      <div className="absolute inset-0 z-0 overflow-hidden pointer-events-none">
-        <div className="absolute top-[-10%] left-[-10%] w-[50vw] h-[50vw] rounded-full bg-blue-400/20 mix-blend-multiply filter blur-[100px] animate-blob"></div>
-        <div className="absolute top-[20%] right-[-10%] w-[40vw] h-[40vw] rounded-full bg-rose-300/20 mix-blend-multiply filter blur-[100px] animate-blob animation-delay-2000"></div>
-        <div className="absolute bottom-[-20%] left-[20%] w-[60vw] h-[60vw] rounded-full bg-purple-300/20 mix-blend-multiply filter blur-[100px] animate-blob animation-delay-4000"></div>
-        <div className="absolute inset-0 bg-white/60 backdrop-blur-[4px]"></div>
-      </div>
 
       {/* Modals 插入點 */}
       {isProjectModalOpen && <ProjectModal />}
@@ -2122,10 +2083,10 @@ export default function App() {
               <button
                 key={item.id}
                 onClick={() => setActiveTab(item.id)}
-                className={`w-full flex items-center space-x-4 px-4 py-3.5 rounded-2xl transition-all duration-300 group ${
+                className={`w-full flex items-center space-x-4 px-4 py-3.5 rounded-2xl transition-colors group ${
                   isActive 
-                    ? 'bg-black text-white shadow-lg translate-x-1' 
-                    : 'hover:bg-white/80 text-slate-500 hover:text-black hover:translate-x-1'
+                    ? 'bg-black text-white shadow-md' 
+                    : 'hover:bg-white/80 text-slate-600 hover:text-black'
                 }`}
               >
                 <Icon size={20} strokeWidth={isActive ? 2.5 : 2} />
@@ -2164,7 +2125,7 @@ export default function App() {
           ) : (
             <button 
               onClick={handleLogin}
-              className="w-full flex items-center justify-center space-x-3 bg-black text-white p-4 rounded-2xl hover:scale-105 transition-transform shadow-lg"
+              className="w-full flex items-center justify-center space-x-3 bg-black text-white p-4 rounded-2xl hover:bg-slate-800 transition-colors shadow-lg"
             >
               <LogIn size={20} />
               <span className="font-bold">登入系統</span>
@@ -2174,7 +2135,7 @@ export default function App() {
       </aside>
 
       {/* Mobile Bottom Navigation */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white/80 backdrop-blur-xl border-t border-slate-200 px-6 py-3 flex justify-between items-center z-50">
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white/95 border-t border-slate-200 px-6 py-3 flex justify-between items-center z-50 shadow-lg">
         {navigation.map((item) => {
           const Icon = item.icon;
           const isActive = activeTab === item.id;
@@ -2182,8 +2143,8 @@ export default function App() {
             <button
               key={item.id}
               onClick={() => setActiveTab(item.id)}
-              className={`flex flex-col items-center space-y-1 transition-all duration-300 ${
-                isActive ? 'text-black scale-110' : 'text-slate-400'
+              className={`flex flex-col items-center space-y-1 transition-colors ${
+                isActive ? 'text-black font-black' : 'text-slate-400'
               }`}
             >
               <Icon size={20} strokeWidth={isActive ? 2.5 : 2} />
@@ -2209,14 +2170,14 @@ export default function App() {
                 <select 
                   value={selectedYear} 
                   onChange={(e) => setSelectedYear(Number(e.target.value))}
-                  className="hidden sm:block bg-white/50 border border-white/60 rounded-full px-4 py-2 font-black text-xs focus:outline-none focus:ring-2 focus:ring-black/20 transition-all cursor-pointer shadow-sm"
+                  className="hidden sm:block bg-white/50 border border-white/60 rounded-full px-4 py-2 font-black text-xs focus:outline-none focus:ring-2 focus:ring-black/20 transition-colors cursor-pointer shadow-sm"
                 >
                   {Array.from({ length: 38 }, (_, i) => 2023 + i).map(y => (
                     <option key={y} value={y}>{y} 年度</option>
                   ))}
                 </select>
 
-                <div className="flex-1 flex items-center bg-white/50 border border-white/60 rounded-full px-4 py-2 focus-within:bg-white focus-within:shadow-md transition-all">
+                <div className="flex-1 flex items-center bg-white/50 border border-white/60 rounded-full px-4 py-2 focus-within:bg-white focus-within:shadow-md transition-colors">
                   <Search size={16} className="text-slate-400" strokeWidth={3} />
                   <input 
                     type="text" 
