@@ -422,18 +422,20 @@ export default function App() {
         salesCommissions[rep] += salesBonus;
       }
 
-      // 實作貢獻: 為每一筆"已完成"的專案中各自分配的金額總和 (依扣除業務獎金後的實收淨利計算)
+      // 實作貢獻: 為每一筆"已完成"的專案中各自分配的金額總和
       if (p.implementers) {
-        const poolRate = p.implementationPoolRate !== undefined && p.implementationPoolRate !== '' ? Number(p.implementationPoolRate) : 30;
-        const projectProfit = Math.max(0, getProjectNetProfit(p));
         Object.keys(p.implementers).forEach(name => {
           const normName = name === 'T' ? 'Tim' : name === 'C' ? 'Chris' : name === 'S' ? 'Sam' : name;
           if (implementationTotals[normName] !== undefined) {
-            const contrib = Number(p.implementers[name]?.contribution) || 0;
-            const amount = contrib > 0 
-              ? Math.round(projectProfit * (poolRate / 100) * (contrib / 100))
-              : (Number(p.implementers[name]?.amount) || 0);
-            implementationTotals[normName] += amount;
+            const savedAmount = Number(p.implementers[name]?.amount);
+            if (!isNaN(savedAmount) && p.implementers[name]?.amount !== undefined && p.implementers[name]?.amount !== null) {
+              implementationTotals[normName] += savedAmount;
+            } else {
+              const contrib = Number(p.implementers[name]?.contribution) || 0;
+              const poolRate = p.implementationPoolRate !== undefined && p.implementationPoolRate !== '' ? Number(p.implementationPoolRate) : 30;
+              const projectProfit = Math.max(0, getProjectNetProfit(p));
+              implementationTotals[normName] += Math.round(projectProfit * (poolRate / 100) * (contrib / 100));
+            }
           }
         });
       }
