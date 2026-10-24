@@ -343,12 +343,13 @@ export default function App() {
       .reduce((sum: number, e: any) => sum + (Number(e.total) || 0), 0);
   };
 
-  // 案件實收淨利計算 (70% 未稅金額 - 外包金額 - 連結報支金額)
+  // 案件實收淨利計算 (獎金30%時未稅扣除額為70%；獎金50%時未稅扣除額為50% - 外包金額 - 連結報支金額)
   const getProjectNetProfit = (p: any) => {
-    const net70 = (Number(p.netAmount) || 0) * 0.7;
+    const deductionRate = p.implementationPoolRate === 50 ? 0.5 : 0.7;
+    const netDeduction = (Number(p.netAmount) || 0) * deductionRate;
     const outsourced = getProjectOutsourcedTotal(p);
     const linkedExpensesTotal = getProjectLinkedExpensesTotal(p.projectNumber);
-    return net70 - outsourced - linkedExpensesTotal;
+    return netDeduction - outsourced - linkedExpensesTotal;
   };
 
   // 根據年度篩選與自動排序 (進行中與待核銷排上方)
@@ -568,7 +569,8 @@ export default function App() {
       const net = Number(netVal) || 0;
       const currentOutsourced = outsourcedList.reduce((s: number, i: any) => s + (Number(i.amount) || 0), 0);
       const currentLinkedExpSum = linkedExpenses.reduce((s: number, e: any) => s + (Number(e.total) || 0), 0);
-      const profit = Math.max(0, net * 0.7 - currentOutsourced - currentLinkedExpSum);
+      const deductionRate = poolRate === 50 ? 0.5 : 0.7;
+      const profit = Math.max(0, net * deductionRate - currentOutsourced - currentLinkedExpSum);
       
       const newImps: any = {};
       Object.keys(imps).forEach(name => {
@@ -755,8 +757,9 @@ export default function App() {
             {(() => {
               const currentOutsourced = outsourcedItems.reduce((s, i) => s + (Number(i.amount) || 0), 0);
               const currentLinkedExpSum = linkedExpenses.reduce((s, e) => s + (Number(e.total) || 0), 0);
-              const currentNet70 = (Number(netAmount) || 0) * 0.7;
-              const liveNetProfit = currentNet70 - currentOutsourced - currentLinkedExpSum;
+              const deductionRate = implementationPoolRate === 50 ? 0.5 : 0.7;
+              const currentNetDeduction = (Number(netAmount) || 0) * deductionRate;
+              const liveNetProfit = currentNetDeduction - currentOutsourced - currentLinkedExpSum;
 
               return (
                 <div className="p-5 rounded-3xl bg-gradient-to-br from-slate-900 via-slate-800 to-black text-white shadow-xl space-y-3">
@@ -770,8 +773,8 @@ export default function App() {
                   </div>
                   <div className="grid grid-cols-3 gap-2 text-[11px] font-bold">
                     <div className="bg-white/10 p-2.5 rounded-2xl">
-                      <span className="text-slate-400 block mb-0.5">未稅 70% 扣除額</span>
-                      <span className="text-white font-black text-xs">{formatMoney(currentNet70)}</span>
+                      <span className="text-slate-400 block mb-0.5">未稅 {implementationPoolRate === 50 ? '50%' : '70%'} 扣除額</span>
+                      <span className="text-white font-black text-xs">{formatMoney(currentNetDeduction)}</span>
                     </div>
                     <div className="bg-white/10 p-2.5 rounded-2xl">
                       <span className="text-rose-300 block mb-0.5">外包扣除 (-)</span>
