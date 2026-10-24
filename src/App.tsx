@@ -355,7 +355,8 @@ export default function App() {
 
   // 案件實收淨利計算 (未稅扣除額 - 業務獎金扣除 - 外包金額 - 連結報支金額)
   const getProjectNetProfit = (p: any) => {
-    const deductionRate = p.implementationPoolRate === 50 ? 0.5 : 0.7;
+    const poolRate = p.implementationPoolRate !== undefined && p.implementationPoolRate !== '' ? Number(p.implementationPoolRate) : 30;
+    const deductionRate = (100 - poolRate) / 100;
     const netDeduction = (Number(p.netAmount) || 0) * deductionRate;
     const salesBonus = getProjectSalesBonus(p);
     const outsourced = getProjectOutsourcedTotal(p);
@@ -423,7 +424,7 @@ export default function App() {
 
       // 實作貢獻: 為每一筆"已完成"的專案中各自分配的金額總和 (依扣除業務獎金後的實收淨利計算)
       if (p.implementers) {
-        const poolRate = p.implementationPoolRate || 30;
+        const poolRate = p.implementationPoolRate !== undefined && p.implementationPoolRate !== '' ? Number(p.implementationPoolRate) : 30;
         const projectProfit = Math.max(0, getProjectNetProfit(p));
         Object.keys(p.implementers).forEach(name => {
           const normName = name === 'T' ? 'Tim' : name === 'C' ? 'Chris' : name === 'S' ? 'Sam' : name;
@@ -509,7 +510,11 @@ export default function App() {
     const [isNewClient, setIsNewClient] = useState(editingProject?.isNewClient || '否');
     const [baseBonusRate, setBaseBonusRate] = useState(editingProject?.baseBonusRate !== undefined ? editingProject.baseBonusRate.toString() : '5');
     const [newClientBonusRate, setNewClientBonusRate] = useState(editingProject?.newClientBonusRate !== undefined ? editingProject.newClientBonusRate.toString() : '10');
-    const [implementationPoolRate, setImplementationPoolRate] = useState<number>(editingProject?.implementationPoolRate || 30);
+    const [implementationPoolRate, setImplementationPoolRate] = useState<number>(
+      editingProject?.implementationPoolRate !== undefined && editingProject?.implementationPoolRate !== '' 
+        ? Number(editingProject.implementationPoolRate) 
+        : 30
+    );
     const [otherRep, setOtherRep] = useState('');
     const [isInvoiceIssued, setIsInvoiceIssued] = useState(editingProject?.isInvoiceIssued || '否');
     const [status, setStatus] = useState(editingProject?.status || '進行中');
@@ -579,7 +584,7 @@ export default function App() {
       const net = Number(netVal) || 0;
       const currentOutsourced = outsourcedList.reduce((s: number, i: any) => s + (Number(i.amount) || 0), 0);
       const currentLinkedExpSum = linkedExpenses.reduce((s: number, e: any) => s + (Number(e.total) || 0), 0);
-      const deductionRate = poolRate === 50 ? 0.5 : 0.7;
+      const deductionRate = (100 - poolRate) / 100;
       
       const bonusRate = rep === '無' ? 0 : ((Number(bRate) || 5) + (newClient === '是' ? (Number(ncRate) || 10) : 0));
       const sBonus = Math.round(net * (bonusRate / 100));
@@ -791,7 +796,7 @@ export default function App() {
             {(() => {
               const currentOutsourced = outsourcedItems.reduce((s, i) => s + (Number(i.amount) || 0), 0);
               const currentLinkedExpSum = linkedExpenses.reduce((s, e) => s + (Number(e.total) || 0), 0);
-              const deductionRate = implementationPoolRate === 50 ? 0.5 : 0.7;
+              const deductionRate = (100 - implementationPoolRate) / 100;
               const currentNetDeduction = (Number(netAmount) || 0) * deductionRate;
               
               const bonusRate = salesRep === '無' ? 0 : ((Number(baseBonusRate) || 5) + (isNewClient === '是' ? (Number(newClientBonusRate) || 10) : 0));
@@ -811,7 +816,7 @@ export default function App() {
                   </div>
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px] font-bold">
                     <div className="bg-white/10 p-2.5 rounded-2xl">
-                      <span className="text-slate-400 block mb-0.5">未稅 {implementationPoolRate === 50 ? '50%' : '70%'} 扣除額</span>
+                      <span className="text-slate-400 block mb-0.5">未稅 {100 - implementationPoolRate}% 扣除額</span>
                       <span className="text-white font-black text-xs">{formatMoney(currentNetDeduction)}</span>
                     </div>
                     <div className="bg-white/10 p-2.5 rounded-2xl">
@@ -894,6 +899,13 @@ export default function App() {
                   實作人員與貢獻 (分配實收淨利 % 數)
                 </label>
                 <div className="flex bg-white/60 p-1 rounded-xl border border-black/10 text-xs font-bold self-start sm:self-auto shadow-sm">
+                  <button 
+                    type="button"
+                    onClick={() => handlePoolRateChange(0)}
+                    className={`px-3 py-1 rounded-lg transition-colors ${implementationPoolRate === 0 ? 'bg-black text-white shadow-sm font-black' : 'text-slate-500 hover:text-black'}`}
+                  >
+                    0% 獎金池
+                  </button>
                   <button 
                     type="button"
                     onClick={() => handlePoolRateChange(30)}
