@@ -126,7 +126,7 @@ const getTodayString = () => {
 // --- 獨立元件區 ---
 const StatusBadge = ({ status }: { status: string }) => {
   let style = { background: 'rgba(0,0,0,0.05)', color: '#000' };
-  if (status === '已完工' || status === '已核銷' || status === '已到貨') {
+  if (status === '已完工' || status === '已完成' || status === '已核銷' || status === '已到貨') {
     style = { background: '#000', color: '#fff' };
   } else if (status === '進行中' || status === '確認報價') {
     style = { background: '#005bbb', color: '#fff' };
@@ -134,13 +134,13 @@ const StatusBadge = ({ status }: { status: string }) => {
     style = { background: '#ff3b30', color: '#fff' };
   }
   return (
-    <span className="px-3 py-1.5 text-xs font-bold rounded-full tracking-wider shadow-sm" style={style}>
+    <span className="px-3 py-1.5 text-xs font-bold rounded-full tracking-wider shadow-sm whitespace-nowrap inline-block" style={style}>
       {status}
     </span>
   );
 };
 
-const TableView = ({ title, buttonText, headers, renderRow, renderMobileCard, data, onAdd, onRowClick }: any) => (
+const TableView = ({ title, buttonText, headers, renderRow, renderMobileCard, data, onAdd, onRowClick, topContent }: any) => (
   <div className="glass-panel rounded-3xl flex flex-col h-full overflow-hidden">
     <div className="p-4 sm:p-6 lg:p-8 border-b border-black/5 flex justify-between items-center bg-white/20">
       <h2 className="text-xl sm:text-2xl font-black text-black tracking-tight">{title}</h2>
@@ -151,7 +151,8 @@ const TableView = ({ title, buttonText, headers, renderRow, renderMobileCard, da
         <Plus size={16} className="mr-1 sm:mr-1.5" strokeWidth={3} /> {buttonText}
       </button>
     </div>
-    <div className="p-3 sm:p-4 md:p-6">
+    <div className="p-3 sm:p-4 md:p-6 space-y-4">
+      {topContent}
       {/* 手機卡片化檢視 (iPhone / Mobile View) */}
       <div className="md:hidden space-y-3">
         {data.length === 0 ? (
@@ -301,7 +302,27 @@ export default function App() {
 
     const qProjects = query(collection(db, 'projects'), where('uid', '==', user.uid));
     const unsubProjects = onSnapshot(qProjects, (snapshot) => {
-      setProjects(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      const loaded = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as any));
+      setProjects(loaded);
+      loaded.forEach((p: any) => {
+        if (p.implementers && p.id) {
+          const net = Number(p.netAmount) || 0;
+          const poolRate = p.implementationPoolRate !== undefined && p.implementationPoolRate !== '' ? Number(p.implementationPoolRate) : 30;
+          let needsSync = false;
+          const syncedImps: any = { ...p.implementers };
+          Object.keys(p.implementers).forEach(name => {
+            const contrib = Number(p.implementers[name]?.contribution) || 0;
+            const expectedAmount = Math.round(net * (poolRate / 100) * (contrib / 100));
+            if (Number(p.implementers[name]?.amount) !== expectedAmount) {
+              syncedImps[name] = { ...p.implementers[name], contribution: contrib, amount: expectedAmount };
+              needsSync = true;
+            }
+          });
+          if (needsSync) {
+            updateDoc(doc(db, 'projects', p.id), { implementers: syncedImps }).catch(e => console.error(e));
+          }
+        }
+      });
     }, (err) => handleFirestoreError(err, 'list', 'projects'));
 
     const qExpenses = query(collection(db, 'expenses'), where('uid', '==', user.uid));
@@ -428,13 +449,13 @@ export default function App() {
           const normName = name === 'T' ? 'Tim' : name === 'C' ? 'Chris' : name === 'S' ? 'Sam' : name;
           if (implementationTotals[normName] !== undefined) {
             const savedAmount = Number(p.implementers[name]?.amount);
-            if (!isNaN(savedAmount) && p.implementers[name]?.amount !== undefined && p.implementers[name]?.amount !== null) {
+            if (!(Number(p.implementers[name]?.contribution) > 0) && !isNaN(savedAmount) && p.implementers[name]?.amount !== undefined && p.implementers[name]?.amount !== null) {
               implementationTotals[normName] += savedAmount;
             } else {
               const contrib = Number(p.implementers[name]?.contribution) || 0;
               const poolRate = p.implementationPoolRate !== undefined && p.implementationPoolRate !== '' ? Number(p.implementationPoolRate) : 30;
-              const projectProfit = Math.max(0, getProjectNetProfit(p));
-              implementationTotals[normName] += Math.round(projectProfit * (poolRate / 100) * (contrib / 100));
+              const net = Number(p.netAmount) || 0;
+              implementationTotals[normName] += Math.round(net * (poolRate / 100) * (contrib / 100));
             }
           }
         });
@@ -538,7 +559,21 @@ export default function App() {
     const [showConfirmDelete, setShowConfirmDelete] = useState(false);
 
     // 實作人員
-    const [implementers, setImplementers] = useState(editingProject?.implementers || {
+    const [implementers, setImplementers] = useState(() => {
+      const raw = editingProject?.implementers || { Tim: { contribution: 0, amount: 0 }, Chris: { contribution: 0, amount: 0 }, Sam: { contribution: 0, amount: 0 } };
+      const net = Number(editingProject?.netAmount) || 0;
+      const poolRate = editingProject?.implementationPoolRate !== undefined && editingProject?.implementationPoolRate !== '' ? Number(editingProject.implementationPoolRate) : 30;
+      const initImps: any = {};
+      ['Tim', 'Chris', 'Sam'].forEach(name => {
+        const contrib = Number(raw[name]?.contribution) || 0;
+        initImps[name] = {
+          contribution: contrib,
+          amount: contrib > 0 ? Math.round(net * (poolRate / 100) * (contrib / 100)) : (Number(raw[name]?.amount) || 0)
+        };
+      });
+      return initImps;
+    });
+    const _unusedDefaultImps = ({
       Tim: { contribution: 0, amount: 0 },
       Chris: { contribution: 0, amount: 0 },
       Sam: { contribution: 0, amount: 0 }
@@ -598,7 +633,7 @@ export default function App() {
         const contrib = Number(imps[name]?.contribution) || 0;
         newImps[name] = {
           contribution: contrib,
-          amount: Math.round(profit * (poolRate / 100) * (contrib / 100))
+          amount: Math.round(net * (poolRate / 100) * (contrib / 100))
         };
       });
       return newImps;
@@ -731,8 +766,8 @@ export default function App() {
     };
 
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 overflow-y-auto">
-        <div className="glass-modal w-full max-w-2xl rounded-3xl p-6 md:p-8 my-auto max-h-[95vh] overflow-y-auto">
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-2 sm:p-4 overflow-y-auto">
+        <div className="glass-modal w-full max-w-2xl rounded-3xl p-4 sm:p-6 md:p-8 my-auto max-h-[95vh] overflow-y-auto overflow-x-hidden">
           <div className="flex justify-between items-center mb-6">
             <h2 className="text-2xl font-black text-black">{editingProject ? '更新案件' : '新增案件'}</h2>
             <button onClick={() => { setProjectModalOpen(false); setEditingProject(null); }} className="p-2 hover:bg-black/5 rounded-full transition-colors">
@@ -898,9 +933,9 @@ export default function App() {
             <div className="border-t border-black/5 pt-5">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-3 gap-2">
                 <label className="block text-sm font-bold text-slate-700">
-                  實作人員與貢獻 (分配實收淨利 % 數)
+                  實作人員與貢獻 (未稅金額 {implementationPoolRate}% 獎金池：{formatMoney(Math.round((Number(netAmount) || 0) * (implementationPoolRate / 100)))})
                 </label>
-                <div className="flex bg-white/60 p-1 rounded-xl border border-black/10 text-xs font-bold self-start sm:self-auto shadow-sm">
+                <div className="grid grid-cols-3 sm:flex bg-white/60 p-1 rounded-xl border border-black/10 text-xs font-bold w-full sm:w-auto shadow-sm">
                   <button 
                     type="button"
                     onClick={() => handlePoolRateChange(0)}
@@ -926,9 +961,9 @@ export default function App() {
               </div>
               <div className="space-y-3">
                 {['Tim', 'Chris', 'Sam'].map(name => (
-                  <div key={name} className="grid grid-cols-2 sm:grid-cols-3 gap-3 sm:gap-4 items-center bg-white/40 sm:bg-transparent p-2.5 sm:p-0 rounded-2xl border border-black/5 sm:border-none">
-                    <div className="font-bold text-slate-700 text-sm sm:text-base">{name}</div>
-                    <div className="flex items-center space-x-2">
+                  <div key={name} className="grid grid-cols-12 gap-2 sm:gap-4 items-center bg-white/40 sm:bg-transparent p-2.5 sm:p-0 rounded-2xl border border-black/5 sm:border-none">
+                    <div className="col-span-3 sm:col-span-4 font-bold text-slate-700 text-sm sm:text-base">{name}</div>
+                    <div className="col-span-5 sm:col-span-4 flex items-center space-x-1.5 min-w-0">
                       <input 
                         type="number" 
                         value={implementers[name].contribution} 
@@ -938,7 +973,7 @@ export default function App() {
                       />
                       <span className="font-bold text-slate-400 text-xs sm:text-sm">%</span>
                     </div>
-                    <div className="text-right font-black text-black text-sm col-span-2 sm:col-span-1">
+                    <div className="col-span-4 sm:col-span-4 text-right font-black text-black text-sm truncate">
                       {formatMoney(implementers[name].amount)}
                     </div>
                   </div>
@@ -961,26 +996,26 @@ export default function App() {
 
               <div className="space-y-3">
                 {outsourcedItems.map((item, idx) => (
-                  <div key={item.id || idx} className="flex items-center space-x-3 bg-white/40 p-3 rounded-2xl border border-black/5 shadow-sm">
+                  <div key={item.id || idx} className="flex flex-wrap sm:flex-nowrap items-center gap-2 sm:gap-3 bg-white/40 p-3 rounded-2xl border border-black/5 shadow-sm">
                     <input 
                       type="text" 
                       value={item.vendor} 
                       onChange={e => handleOutsourcedItemChange(item.id, 'vendor', e.target.value)} 
-                      className="flex-1 rounded-xl border border-black/10 bg-white/70 px-3 py-2 font-bold text-sm" 
+                      className="w-full sm:flex-1 min-w-0 rounded-xl border border-black/10 bg-white/70 px-3 py-2 font-bold text-sm" 
                       placeholder="外包廠商名稱" 
                     />
                     <input 
                       type="number" 
                       value={item.amount || ''} 
                       onChange={e => handleOutsourcedItemChange(item.id, 'amount', Number(e.target.value) || 0)} 
-                      className="w-32 rounded-xl border border-black/10 bg-white/70 px-3 py-2 font-black text-sm text-right" 
+                      className="flex-1 sm:flex-none sm:w-36 min-w-0 rounded-xl border border-black/10 bg-white/70 px-3 py-2 font-black text-sm text-right" 
                       placeholder="NT$" 
                     />
                     {outsourcedItems.length > 1 && (
                       <button 
                         type="button" 
                         onClick={() => handleRemoveOutsourced(item.id)}
-                        className="p-2 text-rose-500 hover:bg-rose-100 rounded-xl transition-colors"
+                        className="p-2 text-rose-500 hover:bg-rose-100 rounded-xl transition-colors shrink-0"
                       >
                         <X size={16} />
                       </button>
@@ -1016,13 +1051,13 @@ export default function App() {
               ) : (
                 <div className="space-y-2 max-h-48 overflow-y-auto no-scrollbar">
                   {linkedExpenses.map(e => (
-                    <div key={e.id} className="flex justify-between items-center p-3 bg-amber-50/70 hover:bg-amber-100/70 transition-colors rounded-2xl border border-amber-200/80 text-xs font-bold">
-                      <div className="flex items-center space-x-2">
-                        <span className="font-black bg-amber-200 text-amber-900 px-2 py-0.5 rounded-lg">{e.expenseNumber || '報支'}</span>
-                        <span className="text-slate-800">{e.summary}</span>
-                        <span className="text-slate-400">({e.payer} • {e.category})</span>
+                    <div key={e.id} className="flex justify-between items-center gap-2 p-3 bg-amber-50/70 hover:bg-amber-100/70 transition-colors rounded-2xl border border-amber-200/80 text-xs font-bold">
+                      <div className="col-span-5 sm:col-span-4 flex items-center space-x-1.5 min-w-0">
+                        <span className="font-black bg-amber-200 text-amber-900 px-2 py-0.5 rounded-lg shrink-0">{e.expenseNumber || '報支'}</span>
+                        <span className="text-slate-800 truncate">{e.summary}</span>
+                        <span className="text-slate-400 hidden sm:inline shrink-0">({e.payer} • {e.category})</span>
                       </div>
-                      <div className="flex items-center space-x-3">
+                      <div className="flex items-center space-x-2 shrink-0">
                         <span className="font-black text-rose-600">-{formatMoney(e.total)}</span>
                         <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${e.status === '已核銷' ? 'bg-black text-white' : 'bg-rose-500 text-white'}`}>
                           {e.status}
@@ -1032,7 +1067,7 @@ export default function App() {
                   ))}
                   {linkedAssets.map(a => (
                     <div key={a.id} className="flex justify-between items-center p-3 bg-purple-50/70 hover:bg-purple-100/70 transition-colors rounded-2xl border border-purple-200/80 text-xs font-bold">
-                      <div className="flex items-center space-x-2">
+                      <div className="col-span-5 sm:col-span-4 flex items-center space-x-1.5 min-w-0">
                         <span className="font-black bg-purple-200 text-purple-900 px-2 py-0.5 rounded-lg">{a.assetNumber || '資產'}</span>
                         <span className="text-slate-800">{a.name}</span>
                         <span className="text-slate-400">({a.category})</span>
@@ -1165,8 +1200,8 @@ export default function App() {
     };
 
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 overflow-y-auto">
-        <div className="glass-modal w-full max-w-lg rounded-3xl p-6 md:p-8 my-auto max-h-[95vh] overflow-y-auto">
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-2 sm:p-4 overflow-y-auto">
+        <div className="glass-modal w-full max-w-lg rounded-3xl p-4 sm:p-6 md:p-8 my-auto max-h-[95vh] overflow-y-auto overflow-x-hidden">
           <div className="flex justify-between items-center mb-6">
             <h2 className="text-2xl font-black text-black">{editingExpense ? '更新報支' : '新增報支與進項'}</h2>
             <button onClick={() => { setExpenseModalOpen(false); setEditingExpense(null); }} className="p-2 hover:bg-black/5 rounded-full transition-colors">
@@ -1378,16 +1413,16 @@ export default function App() {
             {filterData(yearFilteredProjects).length === 0 && <p className="text-slate-400 text-center font-bold mt-10">尚無案件</p>}
             {filterData(yearFilteredProjects).slice(0, 4).map((proj, idx) => (
               <div key={idx} className="flex justify-between items-center p-4 bg-white/40 rounded-2xl hover:bg-white/80 transition-colors border border-black/5">
-                <div className="flex items-center space-x-4">
-                  <div className="h-12 w-12 rounded-2xl bg-black flex items-center justify-center text-white font-black text-[10px] shadow-md">
+                <div className="flex items-center space-x-3 sm:space-x-4 min-w-0 flex-1 mr-2">
+                  <div className="h-12 w-12 shrink-0 rounded-2xl bg-black flex items-center justify-center text-white font-black text-[10px] shadow-md">
                     {proj.date}
                   </div>
                   <div>
-                    <p className="text-sm font-black text-black">{proj.client}</p>
-                    <p className="text-[10px] font-bold text-slate-400 uppercase">{proj.service} • {proj.salesRep}</p>
+                    <p className="text-sm font-black text-black truncate">{proj.client}</p>
+                    <p className="text-[10px] font-bold text-slate-400 uppercase truncate">{proj.service} • {proj.salesRep}</p>
                   </div>
                 </div>
-                <div className="text-right flex flex-col items-end gap-1">
+                <div className="text-right flex flex-col items-end gap-1 shrink-0">
                   <p className="text-sm font-black text-black">{formatMoney(proj.totalAmount)}</p>
                   <StatusBadge status={proj.status} />
                 </div>
@@ -1407,16 +1442,16 @@ export default function App() {
             {filterData(yearFilteredExpenses).length === 0 && <p className="text-slate-400 text-center font-bold mt-10">尚無報支記錄</p>}
             {filterData(yearFilteredExpenses).slice(0, 4).map((exp, idx) => (
               <div key={idx} className="flex justify-between items-center p-4 bg-white/40 rounded-2xl hover:bg-white/80 transition-colors border border-black/5">
-                <div className="flex items-center space-x-4">
-                  <div className="h-12 w-12 rounded-2xl bg-white border border-black/10 flex items-center justify-center text-black font-black text-[10px] shadow-sm">
+                <div className="flex items-center space-x-3 sm:space-x-4 min-w-0 flex-1 mr-2">
+                  <div className="h-12 w-12 shrink-0 rounded-2xl bg-white border border-black/10 flex items-center justify-center text-black font-black text-[10px] shadow-sm">
                     {exp.date}
                   </div>
                   <div>
-                    <p className="text-sm font-black text-black">{exp.summary}</p>
+                    <p className="text-sm font-black text-black truncate">{exp.summary}</p>
                     <p className="text-[10px] font-bold text-slate-400 uppercase">{exp.payer} • {exp.category}</p>
                   </div>
                 </div>
-                <div className="text-right flex flex-col items-end gap-1">
+                <div className="text-right flex flex-col items-end gap-1 shrink-0">
                   <p className="text-sm font-black text-rose-500">-{formatMoney(exp.total)}</p>
                   <StatusBadge status={exp.status} />
                 </div>
@@ -1541,6 +1576,37 @@ export default function App() {
     <TableView 
       title="費用報支" 
       buttonText="新增報支"
+      topContent={(() => {
+        const totalExp = yearFilteredExpenses.reduce((sum, e) => sum + (Number(e.total) || 0), 0);
+        const pendingList = yearFilteredExpenses.filter(e => e.status === '待核銷');
+        const pendingExp = pendingList.reduce((sum, e) => sum + (Number(e.total) || 0), 0);
+        const approvedExp = totalExp - pendingExp;
+        return (
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
+            <div className="bg-white/70 border border-black/5 rounded-2xl p-4 shadow-sm flex items-center justify-between sm:flex-col sm:items-start sm:justify-center gap-1">
+              <div>
+                <p className="text-xs font-black text-slate-500 uppercase tracking-wider">{selectedYear} 年度報支總和</p>
+                <p className="text-[11px] font-bold text-slate-400">共 {yearFilteredExpenses.length} 筆報支</p>
+              </div>
+              <p className="text-xl sm:text-2xl font-black text-black tracking-tight">{formatMoney(totalExp)}</p>
+            </div>
+            <div className="bg-rose-50/80 border border-rose-200/80 rounded-2xl p-4 shadow-sm flex items-center justify-between sm:flex-col sm:items-start sm:justify-center gap-1">
+              <div>
+                <p className="text-xs font-black text-rose-600 uppercase tracking-wider">未核銷報支總和</p>
+                <p className="text-[11px] font-bold text-rose-400">待核銷 {pendingList.length} 筆</p>
+              </div>
+              <p className="text-xl sm:text-2xl font-black text-rose-600 tracking-tight">{formatMoney(pendingExp)}</p>
+            </div>
+            <div className="bg-emerald-50/80 border border-emerald-200/80 rounded-2xl p-4 shadow-sm flex items-center justify-between sm:flex-col sm:items-start sm:justify-center gap-1">
+              <div>
+                <p className="text-xs font-black text-emerald-700 uppercase tracking-wider">已核銷報支總和</p>
+                <p className="text-[11px] font-bold text-emerald-500">已核銷 {yearFilteredExpenses.length - pendingList.length} 筆</p>
+              </div>
+              <p className="text-xl sm:text-2xl font-black text-emerald-600 tracking-tight">{formatMoney(approvedExp)}</p>
+            </div>
+          </div>
+        );
+      })()}
       onAdd={() => { setEditingExpense(null); setExpenseModalOpen(true); }}
       onRowClick={(exp: any) => { setEditingExpense(exp); setExpenseModalOpen(true); }}
       data={filterData(yearFilteredExpenses)}
@@ -1728,8 +1794,8 @@ export default function App() {
     };
 
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 overflow-y-auto">
-        <div className="glass-modal w-full max-w-lg rounded-3xl p-6 md:p-8 my-auto max-h-[95vh] overflow-y-auto">
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-2 sm:p-4 overflow-y-auto">
+        <div className="glass-modal w-full max-w-lg rounded-3xl p-4 sm:p-6 md:p-8 my-auto max-h-[95vh] overflow-y-auto overflow-x-hidden">
           <div className="flex justify-between items-center mb-6">
             <h2 className="text-2xl font-black text-black">{editingAsset ? '更新資產' : '登記新資產'}</h2>
             <button onClick={() => { setAssetModalOpen(false); setEditingAsset(null); }} className="p-2 hover:bg-black/5 rounded-full transition-colors">
@@ -1906,10 +1972,10 @@ export default function App() {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 lg:gap-8">
           {/* 財務匯總卡片 */}
           <div className="glass-panel rounded-3xl flex flex-col">
-            <div className="p-8 border-b border-black/5 bg-white/20">
+            <div className="p-5 sm:p-8 border-b border-black/5 bg-white/20">
               <h2 className="text-2xl font-black text-black tracking-tight">財務匯總與 401</h2>
             </div>
-            <div className="p-8">
+            <div className="p-5 sm:p-8">
               <div className="space-y-4">
                 {[
                   { label: '總營業額 (已完成)', value: financials.revenue, highlight: false },
@@ -1946,13 +2012,13 @@ export default function App() {
 
           {/* 股東紅利分配 */}
           <div className="glass-panel rounded-3xl flex flex-col">
-            <div className="p-8 border-b border-black/5 bg-white/20 flex justify-between items-center">
+            <div className="p-5 sm:p-8 border-b border-black/5 bg-white/20 flex justify-between items-center">
               <h2 className="text-2xl font-black text-black tracking-tight">股東分配</h2>
               <button className="w-10 h-10 rounded-full bg-white flex items-center justify-center shadow-sm hover:bg-slate-100 transition-colors">
                 <ArrowDown size={20} strokeWidth={3} />
               </button>
             </div>
-            <div className="p-8 flex flex-col items-center">
+            <div className="p-5 sm:p-8 flex flex-col items-center">
               <div className="w-full h-64 mb-6">
                 <ResponsiveContainer width="100%" height="100%">
                   <RePieChart>
@@ -2014,7 +2080,7 @@ export default function App() {
 
         {/* 報稅抵扣稅金與營收圖表 */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 lg:gap-8">
-          <div className="glass-panel rounded-3xl p-8 lg:col-span-1">
+          <div className="glass-panel rounded-3xl p-5 sm:p-8 lg:col-span-1">
             <h3 className="text-xl font-black mb-6 flex items-center gap-2">
               <Receipt size={20} /> 每期報稅抵扣稅金
             </h3>
@@ -2045,7 +2111,7 @@ export default function App() {
             </div>
           </div>
 
-          <div className="glass-panel rounded-3xl p-8 lg:col-span-2">
+          <div className="glass-panel rounded-3xl p-5 sm:p-8 lg:col-span-2">
             <h3 className="text-xl font-black mb-6 flex items-center gap-2">
               <TrendingUp size={20} /> 近 5 年營收比較
             </h3>
@@ -2216,27 +2282,27 @@ export default function App() {
       {/* 主內容區 */}
       <div className="flex-1 flex flex-col overflow-hidden z-20 pb-20 md:pb-0">
         <header className="pt-4 px-4 md:pt-6 md:px-8">
-          <div className="glass-panel rounded-3xl px-6 py-4 flex items-center justify-between shadow-sm border border-white/60">
-            <div className="flex items-center w-full max-w-2xl">
-              <div className="flex items-center space-x-3 mr-6">
+          <div className="glass-panel rounded-3xl px-4 sm:px-6 py-3 sm:py-4 flex items-center justify-between shadow-sm border border-white/60 gap-2">
+            <div className="flex items-center flex-1 min-w-0 max-w-2xl">
+              <div className="flex items-center space-x-2 sm:space-x-3 mr-2 sm:mr-6 shrink-0">
                 <div className="md:hidden w-8 h-8 bg-black rounded-lg flex items-center justify-center text-white font-black text-sm">Y</div>
-                <h2 className="text-lg font-black tracking-tight whitespace-nowrap">
+                <h2 className="hidden sm:block text-lg font-black tracking-tight whitespace-nowrap">
                   {selectedYear} <span className="text-slate-400 font-bold ml-1">年度</span>
                 </h2>
               </div>
               
-              <div className="flex-1 flex items-center space-x-4">
+              <div className="flex-1 flex items-center space-x-2 sm:space-x-4 min-w-0">
                 <select 
                   value={selectedYear} 
                   onChange={(e) => setSelectedYear(Number(e.target.value))}
-                  className="hidden sm:block bg-white/50 border border-white/60 rounded-full px-4 py-2 font-black text-xs focus:outline-none focus:ring-2 focus:ring-black/20 transition-colors cursor-pointer shadow-sm"
+                  className="bg-white/50 border border-white/60 rounded-full px-3 sm:px-4 py-1.5 sm:py-2 font-black text-xs focus:outline-none focus:ring-2 focus:ring-black/20 transition-colors cursor-pointer shadow-sm shrink-0"
                 >
                   {Array.from({ length: 38 }, (_, i) => 2023 + i).map(y => (
                     <option key={y} value={y}>{y} 年度</option>
                   ))}
                 </select>
 
-                <div className="flex-1 flex items-center bg-white/50 border border-white/60 rounded-full px-4 py-2 focus-within:bg-white focus-within:shadow-md transition-colors">
+                <div className="flex-1 min-w-0 flex items-center bg-white/50 border border-white/60 rounded-full px-3 sm:px-4 py-1.5 sm:py-2 focus-within:bg-white focus-within:shadow-md transition-colors">
                   <Search size={16} className="text-slate-400" strokeWidth={3} />
                   <input 
                     type="text" 
