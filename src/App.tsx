@@ -484,7 +484,7 @@ export default function App() {
     return years.map(y => {
       const yearProjects = projects.filter(p => p.year === y && p.status === '已完成');
       const yearExpenses = expenses.filter(e => e.year === y && e.status === '已核銷');
-      const yearTaxDeduction = taxDeductions.find(t => t.year === y);
+      const yearTaxDeduction = taxDeductions.find(t => t.year === y && !t.values?.isGovernanceDoc);
       const totalTaxDeduction = yearTaxDeduction ? 
         Object.values(yearTaxDeduction.values || {}).reduce((a: any, b: any) => a + (Number(b) || 0), 0) : 0;
 
@@ -1886,7 +1886,7 @@ export default function App() {
   };
 
   const FinancialsView = () => {
-    const currentYearTax = taxDeductions.find(t => t.year === selectedYear);
+    const currentYearTax = taxDeductions.find(t => t.year === selectedYear && !t.values?.isGovernanceDoc);
     const initialTaxValues = currentYearTax?.values || {
       '1-2': 0, '3-4': 0, '5-6': 0, '7-8': 0, '9-10': 0, '11-12': 0
     };
@@ -2138,12 +2138,855 @@ export default function App() {
     );
   };
 
+  const GovernanceView = () => {
+    const govDoc = taxDeductions.find(t => t.values?.isGovernanceDoc === true);
+    const defaultGovernance = {
+      updatedAt: new Date().toISOString().slice(0, 10),
+      basisMeeting: '公司初始章程設定',
+      roles: {
+        execution: {
+          title: '執行 (Execution)',
+          owner: 'Tim',
+          duties: '專案技術可行性評估與排程控管\n3D 掃描、逆向工程與模型品質把關\n外包製程對接、驗收與交付管理'
+        },
+        operations: {
+          title: '營運 (Operations)',
+          owner: 'Chris',
+          duties: '客戶開發、需求洽談與報價合約管理\n專案進度追蹤與跨部門資源協調\n公司營運制度維護與品牌對外窗口'
+        },
+        finance: {
+          title: '財務 (Finance)',
+          owner: 'Sam',
+          duties: '專案收款、費用報支核銷與發票管理\n每期 401 營業稅申報與進銷項抵扣控管\n年度固定支出、資產攤提與股東分潤結算'
+        }
+      },
+      profitRules: {
+        shareholderRatioNote: 'T 股東 (Tim) 50% • C 股東 (Chris) 30% • S 股東 (Sam) 20%',
+        poolRuleNote: '依案件「未稅金額」選擇提撥 0% / 30% / 50% 作為實作人員獎金池；對應未稅扣除額為 100% / 70% / 50%，再扣除業務獎金、外包與連結報支後為案件實收淨利。',
+        oldClientBonusRate: 5,
+        newClientBonusRate: 15,
+        salesBonusNote: '舊客成交抽成未稅金額 5%；新客成交加碼 10%（合計抽成未稅金額 15%），由該案業務獲得並自專案實收淨利中扣除。'
+      },
+      implementationItems: [
+        { id: '1', name: '外出', ratio: 10, note: '現場場勘、取件與客戶端外勤作業' },
+        { id: '2', name: '掃描', ratio: 15, note: '3D 掃描作業與點雲資料擷取' },
+        { id: '3', name: '繪圖', ratio: 15, note: '2D/3D 工程圖面繪製與建模' },
+        { id: '4', name: '設計', ratio: 20, note: '產品機構設計、逆向曲面建構' },
+        { id: '5', name: '採購', ratio: 5, note: '耗材、外購件詢價與廠商發包聯繫' },
+        { id: '6', name: '實作', ratio: 15, note: '模型製作、打樣組裝與後處理' },
+        { id: '7', name: '專案討論', ratio: 10, note: '內部技術會議、客戶需求對焦討論' },
+        { id: '8', name: '修正作業', ratio: 10, note: '設變修改、公差調整與最終驗收修正' }
+      ],
+      fixedAndAssetRules: {
+        annualRent: 0,
+        annualRentNote: '依實際租約按月/按年提列',
+        annualMisc: 0,
+        annualMiscNote: '含水電、網路、軟體訂閱與辦公耗材預估',
+        legalReserveRate: 10,
+        legalReserveNote: '年度淨利為正時，優先提列 10% 為公司法定盈餘公積，剩餘 90% 為股東可分配紅利。',
+        assetAllocationNote: '公司設備資產依購入成本減除殘值後，按耐用年限逐月計算攤提\n連結至特定專案之耗材/代購報支，直接自該專案實收淨利扣除\n未連結特定專案之一般辦公/雜支報支（已核銷），自公司年度總淨利扣除'
+      }
+    };
+
+    const savedGovernance = govDoc?.values?.governance || defaultGovernance;
+    const savedMeetings: any[] = Array.isArray(govDoc?.values?.meetings) ? govDoc.values.meetings : [];
+
+    const [subTab, setSubTab] = useState<'all' | 'operations' | 'meetings'>('all');
+    const [isEditingGov, setIsEditingGov] = useState(false);
+    const [govDraft, setGovDraft] = useState<any>(savedGovernance);
+    const [isSavingGov, setIsSavingGov] = useState(false);
+
+    // 會議紀錄狀態
+    const [expandedMeetingIds, setExpandedMeetingIds] = useState<Record<string, boolean>>({});
+    const [isMeetingFormOpen, setIsMeetingFormOpen] = useState(false);
+    const [editingMeeting, setEditingMeeting] = useState<any>(null);
+    const [meetingDate, setMeetingDate] = useState(new Date().toISOString().slice(0, 10));
+    const [meetingSubject, setMeetingSubject] = useState('');
+    const [meetingContent, setMeetingContent] = useState('');
+    const [confirmDeleteMeetingId, setConfirmDeleteMeetingId] = useState<string | null>(null);
+
+    useEffect(() => {
+      if (!isEditingGov) {
+        setGovDraft(govDoc?.values?.governance || defaultGovernance);
+      }
+    }, [govDoc, isEditingGov]);
+
+    const saveGovernanceAndMeetings = async (newGovernance: any, newMeetings: any[]) => {
+      if (!user) return;
+      setIsSavingGov(true);
+      try {
+        const payload = {
+          year: 2060,
+          uid: user.uid,
+          values: {
+            isGovernanceDoc: true,
+            governance: newGovernance,
+            meetings: newMeetings
+          }
+        };
+        if (govDoc) {
+          await updateDoc(doc(db, 'taxDeductions', govDoc.id), payload);
+        } else {
+          await setDoc(doc(collection(db, 'taxDeductions')), payload);
+        }
+      } catch (err) {
+        handleFirestoreError(err, govDoc ? 'update' : 'create', 'taxDeductions');
+      } finally {
+        setIsSavingGov(false);
+      }
+    };
+
+    const handleSaveGovDraft = async () => {
+      const updated = {
+        ...govDraft,
+        updatedAt: new Date().toISOString().slice(0, 10)
+      };
+      await saveGovernanceAndMeetings(updated, savedMeetings);
+      setIsEditingGov(false);
+    };
+
+    const handleAddImpItem = () => {
+      const list = Array.isArray(govDraft.implementationItems) ? govDraft.implementationItems : [];
+      setGovDraft({
+        ...govDraft,
+        implementationItems: [
+          ...list,
+          { id: Date.now().toString(), name: '新實作項目', ratio: 0, note: '請輸入作業說明' }
+        ]
+      });
+    };
+
+    const handleUpdateImpItem = (id: string, field: string, value: any) => {
+      const list = (govDraft.implementationItems || []).map((item: any) =>
+        item.id === id ? { ...item, [field]: value } : item
+      );
+      setGovDraft({ ...govDraft, implementationItems: list });
+    };
+
+    const handleRemoveImpItem = (id: string) => {
+      const list = (govDraft.implementationItems || []).filter((item: any) => item.id !== id);
+      setGovDraft({ ...govDraft, implementationItems: list });
+    };
+
+    const handleOpenNewMeeting = () => {
+      setEditingMeeting(null);
+      setMeetingDate(new Date().toISOString().slice(0, 10));
+      setMeetingSubject('');
+      setMeetingContent('');
+      setIsMeetingFormOpen(true);
+    };
+
+    const handleOpenEditMeeting = (m: any, e: React.MouseEvent) => {
+      e.stopPropagation();
+      setEditingMeeting(m);
+      setMeetingDate(m.date || new Date().toISOString().slice(0, 10));
+      setMeetingSubject(m.subject || '');
+      setMeetingContent(m.content || '');
+      setIsMeetingFormOpen(true);
+    };
+
+    const handleSaveMeeting = async (e: React.FormEvent) => {
+      e.preventDefault();
+      if (!meetingSubject.trim()) return;
+      let nextMeetings: any[];
+      let newId = editingMeeting?.id || Date.now().toString();
+      if (editingMeeting) {
+        nextMeetings = savedMeetings.map(m =>
+          m.id === editingMeeting.id
+            ? { ...m, date: meetingDate, subject: meetingSubject.trim(), content: meetingContent, updatedAt: new Date().toISOString() }
+            : m
+        );
+      } else {
+        const created = {
+          id: newId,
+          date: meetingDate,
+          subject: meetingSubject.trim(),
+          content: meetingContent,
+          createdAt: new Date().toISOString()
+        };
+        nextMeetings = [created, ...savedMeetings];
+      }
+      nextMeetings.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+      await saveGovernanceAndMeetings(savedGovernance, nextMeetings);
+      setExpandedMeetingIds(prev => ({ ...prev, [newId]: true }));
+      setIsMeetingFormOpen(false);
+      setEditingMeeting(null);
+    };
+
+    const handleDeleteMeeting = async (id: string, e: React.MouseEvent) => {
+      e.stopPropagation();
+      const nextMeetings = savedMeetings.filter(m => m.id !== id);
+      await saveGovernanceAndMeetings(savedGovernance, nextMeetings);
+      setConfirmDeleteMeetingId(null);
+    };
+
+    const toggleMeetingExpand = (id: string) => {
+      setExpandedMeetingIds(prev => ({ ...prev, [id]: !prev[id] }));
+    };
+
+    const renderBulletLines = (text: string) => {
+      const lines = (text || '')
+        .split('\n')
+        .map(l => l.trim().replace(/^[-•*]\s*/, ''))
+        .filter(Boolean);
+      if (lines.length === 0) return <p className="text-xs font-bold text-slate-400">尚無內容</p>;
+      return (
+        <ul className="space-y-1.5 text-xs sm:text-sm font-bold text-slate-700 list-disc pl-4">
+          {lines.map((line, i) => (
+            <li key={i} className="leading-relaxed break-words">{line}</li>
+          ))}
+        </ul>
+      );
+    };
+
+    const activeGov = isEditingGov ? govDraft : savedGovernance;
+    const totalImpRatio = (activeGov.implementationItems || []).reduce((s: number, i: any) => s + (Number(i.ratio) || 0), 0);
+    const filteredMeetings = savedMeetings.filter(m => {
+      if (!searchQuery.trim()) return true;
+      const q = searchQuery.toLowerCase();
+      return (m.subject || '').toLowerCase().includes(q) || (m.content || '').toLowerCase().includes(q) || (m.date || '').includes(q);
+    });
+
+    return (
+      <div className="space-y-6 lg:space-y-8">
+        {/* 頂部子分頁切換列 */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white/60 p-3 sm:p-4 rounded-3xl border border-white/60 shadow-sm">
+          <div>
+            <h2 className="text-xl sm:text-2xl font-black text-black tracking-tight">公司會議紀錄與運作分配制度</h2>
+            <p className="text-xs font-bold text-slate-500">管理歷次會議決議、執掌分工、分潤抽成與八大實作占比基準</p>
+          </div>
+          <div className="grid grid-cols-3 sm:flex bg-slate-200/70 p-1 rounded-2xl text-xs font-black shrink-0">
+            {[
+              { id: 'all', label: '全部檢視' },
+              { id: 'meetings', label: `會議紀錄 (${savedMeetings.length})` },
+              { id: 'operations', label: '運作分配制度' }
+            ].map(t => (
+              <button
+                key={t.id}
+                type="button"
+                onClick={() => setSubTab(t.id as any)}
+                className={`px-3 py-2 rounded-xl transition-colors ${subTab === t.id ? 'bg-black text-white shadow-sm' : 'text-slate-600 hover:text-black'}`}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* 1. 公司會議紀錄區塊 */}
+        {(subTab === 'all' || subTab === 'meetings') && (
+          <div className="glass-panel rounded-3xl overflow-hidden border border-white/60 shadow-sm">
+            <div className="p-4 sm:p-6 lg:p-8 border-b border-black/5 bg-white/30 flex flex-wrap justify-between items-center gap-3">
+              <div>
+                <h3 className="text-lg sm:text-xl font-black text-black tracking-tight">1. 公司會議紀錄</h3>
+                <p className="text-xs font-bold text-slate-500 mt-0.5">點擊會議主旨即可展開檢視條列式決議內容</p>
+              </div>
+              <button
+                type="button"
+                onClick={handleOpenNewMeeting}
+                className="bg-black text-white px-4 py-2.5 rounded-full text-xs sm:text-sm font-bold hover:bg-slate-800 transition-colors flex items-center gap-1.5 shadow-md shrink-0"
+              >
+                <Plus size={16} strokeWidth={3} /> <span>新增會議紀錄</span>
+              </button>
+            </div>
+
+            <div className="p-4 sm:p-6 space-y-4">
+              {/* 新增/編輯會議紀錄表單 */}
+              {isMeetingFormOpen && (
+                <form onSubmit={handleSaveMeeting} className="bg-white/90 border border-black/10 rounded-2xl p-4 sm:p-6 space-y-4 shadow-md">
+                  <div className="flex justify-between items-center border-b border-black/5 pb-3">
+                    <h4 className="font-black text-base text-black">{editingMeeting ? '編輯會議紀錄' : '新增會議紀錄'}</h4>
+                    <button type="button" onClick={() => { setIsMeetingFormOpen(false); setEditingMeeting(null); }} className="p-1.5 hover:bg-black/5 rounded-full">
+                      <X size={18} />
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-600 mb-1">會議日期</label>
+                      <input
+                        required
+                        type="date"
+                        value={meetingDate}
+                        onChange={e => setMeetingDate(e.target.value)}
+                        className="w-full rounded-xl border border-black/10 bg-white px-3 py-2.5 font-bold text-sm focus:outline-none focus:ring-2 focus:ring-black/50"
+                      />
+                    </div>
+                    <div className="sm:col-span-2">
+                      <label className="block text-xs font-bold text-slate-600 mb-1">會議主旨</label>
+                      <input
+                        required
+                        type="text"
+                        value={meetingSubject}
+                        onChange={e => setMeetingSubject(e.target.value)}
+                        placeholder="例如：2026 年度分潤與八大實作占比調整決議"
+                        className="w-full rounded-xl border border-black/10 bg-white px-3 py-2.5 font-bold text-sm focus:outline-none focus:ring-2 focus:ring-black/50"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-600 mb-1">會議內容 (條列式：每行輸入一項決議，展開時自動條列呈現)</label>
+                    <textarea
+                      required
+                      value={meetingContent}
+                      onChange={e => setMeetingContent(e.target.value)}
+                      placeholder={'1. 業務洽談舊客維持 5%，新客加碼 10% 共 15%\n2. 實作獎金池以未稅金額 0%、30%、50% 計算\n3. 調整八大實作項目占比...'}
+                      className="w-full rounded-xl border border-black/10 bg-white px-3 py-2.5 font-bold text-sm h-32 focus:outline-none focus:ring-2 focus:ring-black/50"
+                    />
+                  </div>
+                  <div className="flex justify-end gap-2 pt-2">
+                    <button
+                      type="button"
+                      onClick={() => { setIsMeetingFormOpen(false); setEditingMeeting(null); }}
+                      className="px-4 py-2 rounded-xl bg-slate-200 text-slate-700 font-bold text-xs sm:text-sm hover:bg-slate-300 transition-colors"
+                    >
+                      取消
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={isSavingGov}
+                      className="px-5 py-2 rounded-xl bg-black text-white font-bold text-xs sm:text-sm hover:bg-slate-800 transition-colors shadow-sm disabled:opacity-50"
+                    >
+                      {isSavingGov ? '儲存中...' : (editingMeeting ? '更新紀錄' : '儲存會議紀錄')}
+                    </button>
+                  </div>
+                </form>
+              )}
+
+              {/* 會議紀錄手風琴列表 */}
+              {filteredMeetings.length === 0 ? (
+                <div className="p-8 text-center bg-white/40 rounded-2xl border border-dashed border-black/10 text-slate-400 font-bold text-sm">
+                  目前尚無會議紀錄，請點擊右上角「新增會議紀錄」建立第一筆資料
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {filteredMeetings.map(m => {
+                    const isExpanded = !!expandedMeetingIds[m.id];
+                    return (
+                      <div key={m.id} className="bg-white/70 hover:bg-white/95 rounded-2xl border border-black/5 shadow-sm overflow-hidden transition-colors">
+                        <div
+                          onClick={() => toggleMeetingExpand(m.id)}
+                          className="p-4 flex items-center justify-between gap-3 cursor-pointer select-none"
+                        >
+                          <div className="flex flex-wrap sm:flex-nowrap items-center gap-2 sm:gap-3 min-w-0 flex-1">
+                            <span className="px-2.5 py-1 rounded-lg bg-black text-white font-black text-xs shrink-0">
+                              {m.date}
+                            </span>
+                            <h4 className="font-black text-sm sm:text-base text-black truncate">
+                              {m.subject}
+                            </h4>
+                          </div>
+                          <div className="flex items-center gap-2 shrink-0">
+                            <button
+                              type="button"
+                              onClick={(e) => handleOpenEditMeeting(m, e)}
+                              className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition-colors"
+                            >
+                              編輯
+                            </button>
+                            {confirmDeleteMeetingId === m.id ? (
+                              <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
+                                <button
+                                  type="button"
+                                  onClick={(e) => handleDeleteMeeting(m.id, e)}
+                                  className="px-2 py-1 rounded-lg bg-rose-600 text-white font-bold text-xs"
+                                >
+                                  確認刪除
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setConfirmDeleteMeetingId(null)}
+                                  className="px-2 py-1 rounded-lg bg-slate-200 text-slate-700 font-bold text-xs"
+                                >
+                                  取消
+                                </button>
+                              </div>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={(e) => { e.stopPropagation(); setConfirmDeleteMeetingId(m.id); }}
+                                className="px-2 py-1 rounded-lg text-rose-500 hover:bg-rose-50 font-bold text-xs transition-colors"
+                              >
+                                刪除
+                              </button>
+                            )}
+                            <div className={`w-7 h-7 rounded-full bg-black/5 flex items-center justify-center transition-transform ${isExpanded ? 'rotate-180 bg-black text-white' : 'text-slate-600'}`}>
+                              <ArrowDown size={14} strokeWidth={3} />
+                            </div>
+                          </div>
+                        </div>
+
+                        {isExpanded && (
+                          <div className="px-4 pb-4 pt-3 border-t border-black/5 bg-slate-50/70">
+                            <p className="text-[11px] font-black text-slate-400 uppercase tracking-wider mb-2">會議決議與內容明細：</p>
+                            {renderBulletLines(m.content)}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* 2. 目前公司運作分配區塊 */}
+        {(subTab === 'all' || subTab === 'operations') && (
+          <div className="glass-panel rounded-3xl overflow-hidden border border-white/60 shadow-sm">
+            <div className="p-4 sm:p-6 lg:p-8 border-b border-black/5 bg-white/30 flex flex-wrap justify-between items-center gap-3">
+              <div>
+                <h3 className="text-lg sm:text-xl font-black text-black tracking-tight">2. 目前公司運作分配</h3>
+                <p className="text-xs font-bold text-slate-500 mt-0.5">
+                  最後更新：{activeGov.updatedAt || '-'} • 依據會議：{activeGov.basisMeeting || '公司章程'}
+                </p>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                {!isEditingGov ? (
+                  <button
+                    type="button"
+                    onClick={() => { setGovDraft(JSON.parse(JSON.stringify(savedGovernance))); setIsEditingGov(true); }}
+                    className="bg-black text-white px-4 py-2.5 rounded-full text-xs sm:text-sm font-bold hover:bg-slate-800 transition-colors shadow-md"
+                  >
+                    手動編輯更新
+                  </button>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => setIsEditingGov(false)}
+                      className="bg-slate-200 text-slate-700 px-4 py-2.5 rounded-full text-xs sm:text-sm font-bold hover:bg-slate-300 transition-colors"
+                    >
+                      取消
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleSaveGovDraft}
+                      disabled={isSavingGov}
+                      className="bg-emerald-600 text-white px-5 py-2.5 rounded-full text-xs sm:text-sm font-black hover:bg-emerald-700 transition-colors shadow-md disabled:opacity-50"
+                    >
+                      {isSavingGov ? '儲存中...' : '儲存運作分配更新'}
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+
+            <div className="p-4 sm:p-6 lg:p-8 space-y-6">
+              {isEditingGov && (
+                <div className="bg-amber-50/80 border border-amber-200 rounded-2xl p-4">
+                  <label className="block text-xs font-black text-amber-900 mb-1">本次更新依據之會議紀錄主旨 / 備註</label>
+                  <input
+                    type="text"
+                    value={govDraft.basisMeeting || ''}
+                    onChange={e => setGovDraft({ ...govDraft, basisMeeting: e.target.value })}
+                    placeholder="例如：依 2026-10-27 股東會議決議更新"
+                    className="w-full rounded-xl border border-amber-300 bg-white px-3 py-2 text-sm font-bold"
+                  />
+                </div>
+              )}
+
+              {/* (A) 執行、營運、財務三者工作內容職掌 */}
+              <div className="space-y-3">
+                <h4 className="text-base font-black text-black flex items-center gap-2">
+                  <Users size={18} /> 三大部門工作內容職掌（執行、營運、財務）
+                </h4>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  {(['execution', 'operations', 'finance'] as const).map((roleKey, idx) => {
+                    const role = activeGov.roles?.[roleKey] || {};
+                    const badgeColors = [
+                      'bg-black text-white',
+                      'bg-[#005bbb] text-white',
+                      'bg-emerald-700 text-white'
+                    ];
+                    return (
+                      <div key={roleKey} className="bg-white/70 rounded-2xl p-4 sm:p-5 border border-black/5 shadow-sm flex flex-col justify-between space-y-3">
+                        <div className="space-y-3">
+                          <div className="flex items-center justify-between gap-2 border-b border-black/5 pb-2.5">
+                            <span className={`px-3 py-1 rounded-xl text-xs font-black ${badgeColors[idx]}`}>
+                              {role.title}
+                            </span>
+                            {isEditingGov ? (
+                              <input
+                                type="text"
+                                value={role.owner || ''}
+                                onChange={e => setGovDraft({
+                                  ...govDraft,
+                                  roles: {
+                                    ...govDraft.roles,
+                                    [roleKey]: { ...role, owner: e.target.value }
+                                  }
+                                })}
+                                placeholder="負責人"
+                                className="w-28 rounded-lg border border-black/15 bg-white px-2.5 py-1 text-xs font-black text-right"
+                              />
+                            ) : (
+                              <span className="text-xs font-black text-slate-600 bg-slate-100 px-2.5 py-1 rounded-lg">
+                                負責：{role.owner || '-'}
+                              </span>
+                            )}
+                          </div>
+                          {isEditingGov ? (
+                            <div>
+                              <label className="block text-[11px] font-bold text-slate-400 mb-1">職掌內容（每行一項）</label>
+                              <textarea
+                                value={role.duties || ''}
+                                onChange={e => setGovDraft({
+                                  ...govDraft,
+                                  roles: {
+                                    ...govDraft.roles,
+                                    [roleKey]: { ...role, duties: e.target.value }
+                                  }
+                                })}
+                                className="w-full rounded-xl border border-black/10 bg-white p-2.5 text-xs font-bold h-28"
+                              />
+                            </div>
+                          ) : (
+                            renderBulletLines(role.duties)
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* (B) 公司當前分潤比例與業務洽談抽成說明 */}
+              <div className="space-y-3 border-t border-black/5 pt-6">
+                <h4 className="text-base font-black text-black flex items-center gap-2">
+                  <PieChart size={18} /> 公司當前分潤比例與業務洽談抽成說明
+                </h4>
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  {/* 股東分潤與獎金池 */}
+                  <div className="bg-white/70 rounded-2xl p-4 sm:p-5 border border-black/5 shadow-sm space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-black uppercase tracking-wider text-slate-400">股東分潤與未稅獎金池規則</span>
+                    </div>
+                    {isEditingGov ? (
+                      <div className="space-y-3">
+                        <div>
+                          <label className="block text-xs font-bold text-slate-600 mb-1">股東分紅比例說明</label>
+                          <input
+                            type="text"
+                            value={activeGov.profitRules?.shareholderRatioNote || ''}
+                            onChange={e => setGovDraft({
+                              ...govDraft,
+                              profitRules: { ...govDraft.profitRules, shareholderRatioNote: e.target.value }
+                            })}
+                            className="w-full rounded-xl border border-black/10 bg-white px-3 py-2 text-xs font-black"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-bold text-slate-600 mb-1">獎金池與實收淨利計算說明</label>
+                          <textarea
+                            value={activeGov.profitRules?.poolRuleNote || ''}
+                            onChange={e => setGovDraft({
+                              ...govDraft,
+                              profitRules: { ...govDraft.profitRules, poolRuleNote: e.target.value }
+                            })}
+                            className="w-full rounded-xl border border-black/10 bg-white p-2.5 text-xs font-bold h-20"
+                          />
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="p-3 rounded-xl bg-black text-white font-black text-xs sm:text-sm">
+                          {activeGov.profitRules?.shareholderRatioNote}
+                        </div>
+                        <p className="text-xs sm:text-sm font-bold text-slate-700 leading-relaxed">
+                          {activeGov.profitRules?.poolRuleNote}
+                        </p>
+                      </>
+                    )}
+                  </div>
+
+                  {/* 業務新舊客抽成 */}
+                  <div className="bg-white/70 rounded-2xl p-4 sm:p-5 border border-black/5 shadow-sm space-y-3">
+                    <span className="text-xs font-black uppercase tracking-wider text-slate-400 block">業務洽談新 / 舊客抽成基準（依未稅金額計算）</span>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="p-3 rounded-xl bg-sky-50 border border-sky-200/80">
+                        <span className="text-[11px] font-bold text-sky-700 block">舊客洽談抽成</span>
+                        {isEditingGov ? (
+                          <div className="flex items-center gap-1 mt-1">
+                            <input
+                              type="number"
+                              value={activeGov.profitRules?.oldClientBonusRate ?? 5}
+                              onChange={e => setGovDraft({
+                                ...govDraft,
+                                profitRules: { ...govDraft.profitRules, oldClientBonusRate: Number(e.target.value) || 0 }
+                              })}
+                              className="w-full rounded-lg border border-sky-300 bg-white px-2 py-1 text-sm font-black"
+                            />
+                            <span className="font-black text-sky-700">%</span>
+                          </div>
+                        ) : (
+                          <span className="text-xl font-black text-sky-700">{activeGov.profitRules?.oldClientBonusRate ?? 5}%</span>
+                        )}
+                      </div>
+                      <div className="p-3 rounded-xl bg-indigo-50 border border-indigo-200/80">
+                        <span className="text-[11px] font-bold text-indigo-700 block">新客洽談抽成 (含加碼)</span>
+                        {isEditingGov ? (
+                          <div className="flex items-center gap-1 mt-1">
+                            <input
+                              type="number"
+                              value={activeGov.profitRules?.newClientBonusRate ?? 15}
+                              onChange={e => setGovDraft({
+                                ...govDraft,
+                                profitRules: { ...govDraft.profitRules, newClientBonusRate: Number(e.target.value) || 0 }
+                              })}
+                              className="w-full rounded-lg border border-indigo-300 bg-white px-2 py-1 text-sm font-black"
+                            />
+                            <span className="font-black text-indigo-700">%</span>
+                          </div>
+                        ) : (
+                          <span className="text-xl font-black text-indigo-700">{activeGov.profitRules?.newClientBonusRate ?? 15}%</span>
+                        )}
+                      </div>
+                    </div>
+                    {isEditingGov ? (
+                      <textarea
+                        value={activeGov.profitRules?.salesBonusNote || ''}
+                        onChange={e => setGovDraft({
+                          ...govDraft,
+                          profitRules: { ...govDraft.profitRules, salesBonusNote: e.target.value }
+                        })}
+                        className="w-full rounded-xl border border-black/10 bg-white p-2.5 text-xs font-bold h-16"
+                      />
+                    ) : (
+                      <p className="text-xs sm:text-sm font-bold text-slate-700 leading-relaxed">
+                        {activeGov.profitRules?.salesBonusNote}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* (C) 實作各項占比（八大基本項目，可動態新增） */}
+              <div className="space-y-3 border-t border-black/5 pt-6">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h4 className="text-base font-black text-black flex items-center gap-2">
+                      <Briefcase size={18} /> 實作各項占比基準（八大基本項目，可擴充）
+                    </h4>
+                    <span className={`px-2.5 py-0.5 rounded-full text-xs font-black ${totalImpRatio === 100 ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>
+                      各項占比合計：{totalImpRatio}%
+                    </span>
+                  </div>
+                  {isEditingGov && (
+                    <button
+                      type="button"
+                      onClick={handleAddImpItem}
+                      className="bg-slate-900 text-white px-3 py-1.5 rounded-full text-xs font-bold hover:bg-black transition-colors flex items-center gap-1 shadow-sm"
+                    >
+                      <Plus size={14} /> <span>新增實作項目</span>
+                    </button>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                  {(activeGov.implementationItems || []).map((item: any, idx: number) => (
+                    <div key={item.id || idx} className="bg-white/70 rounded-2xl p-4 border border-black/5 shadow-sm flex flex-col justify-between gap-2">
+                      {isEditingGov ? (
+                        <div className="space-y-2">
+                          <div className="flex items-center gap-2">
+                            <span className="w-6 h-6 rounded-lg bg-black text-white font-black text-xs flex items-center justify-center shrink-0">
+                              {idx + 1}
+                            </span>
+                            <input
+                              type="text"
+                              value={item.name}
+                              onChange={e => handleUpdateImpItem(item.id, 'name', e.target.value)}
+                              placeholder="項目名稱"
+                              className="flex-1 min-w-0 rounded-lg border border-black/15 bg-white px-2 py-1 text-xs font-black"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveImpItem(item.id)}
+                              className="p-1 text-rose-500 hover:bg-rose-50 rounded-lg shrink-0"
+                            >
+                              <X size={14} />
+                            </button>
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-xs font-bold text-slate-500">占比：</span>
+                            <input
+                              type="number"
+                              value={item.ratio}
+                              onChange={e => handleUpdateImpItem(item.id, 'ratio', Number(e.target.value) || 0)}
+                              className="w-20 rounded-lg border border-black/15 bg-white px-2 py-1 text-xs font-black text-right"
+                            />
+                            <span className="text-xs font-black text-slate-500">%</span>
+                          </div>
+                          <input
+                            type="text"
+                            value={item.note || ''}
+                            onChange={e => handleUpdateImpItem(item.id, 'note', e.target.value)}
+                            placeholder="作業內容說明"
+                            className="w-full rounded-lg border border-black/10 bg-white px-2 py-1.5 text-xs font-bold text-slate-600"
+                          />
+                        </div>
+                      ) : (
+                        <>
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <span className="w-6 h-6 rounded-lg bg-black text-white font-black text-xs flex items-center justify-center shrink-0">
+                                {idx + 1}
+                              </span>
+                              <span className="font-black text-sm text-black truncate">{item.name}</span>
+                            </div>
+                            <span className="px-2.5 py-1 rounded-xl bg-slate-900 text-white font-black text-xs shrink-0">
+                              {item.ratio}%
+                            </span>
+                          </div>
+                          <p className="text-xs font-bold text-slate-500 leading-relaxed">{item.note || '-'}</p>
+                        </>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* (D) 公司資產分配與年度固定提撥說明 */}
+              <div className="space-y-3 border-t border-black/5 pt-6">
+                <h4 className="text-base font-black text-black flex items-center gap-2">
+                  <Building2 size={18} /> 公司資產分配、年度房租、年度雜支與法定盈餘 10%
+                </h4>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  {/* 公司年度房租 */}
+                  <div className="bg-white/70 rounded-2xl p-4 border border-black/5 shadow-sm space-y-1.5">
+                    <span className="text-xs font-black text-slate-400 uppercase tracking-wider block">公司年度房租</span>
+                    {isEditingGov ? (
+                      <div className="space-y-2">
+                        <input
+                          type="number"
+                          value={activeGov.fixedAndAssetRules?.annualRent ?? 0}
+                          onChange={e => setGovDraft({
+                            ...govDraft,
+                            fixedAndAssetRules: { ...govDraft.fixedAndAssetRules, annualRent: Number(e.target.value) || 0 }
+                          })}
+                          placeholder="年度房租 NT$"
+                          className="w-full rounded-xl border border-black/15 bg-white px-3 py-1.5 text-sm font-black"
+                        />
+                        <input
+                          type="text"
+                          value={activeGov.fixedAndAssetRules?.annualRentNote || ''}
+                          onChange={e => setGovDraft({
+                            ...govDraft,
+                            fixedAndAssetRules: { ...govDraft.fixedAndAssetRules, annualRentNote: e.target.value }
+                          })}
+                          placeholder="房租備註說明"
+                          className="w-full rounded-xl border border-black/10 bg-white px-3 py-1.5 text-xs font-bold"
+                        />
+                      </div>
+                    ) : (
+                      <>
+                        <p className="text-xl font-black text-black">{formatMoney(Number(activeGov.fixedAndAssetRules?.annualRent) || 0)}</p>
+                        <p className="text-xs font-bold text-slate-500">{activeGov.fixedAndAssetRules?.annualRentNote}</p>
+                      </>
+                    )}
+                  </div>
+
+                  {/* 公司年度雜支 */}
+                  <div className="bg-white/70 rounded-2xl p-4 border border-black/5 shadow-sm space-y-1.5">
+                    <span className="text-xs font-black text-slate-400 uppercase tracking-wider block">公司年度雜支</span>
+                    {isEditingGov ? (
+                      <div className="space-y-2">
+                        <input
+                          type="number"
+                          value={activeGov.fixedAndAssetRules?.annualMisc ?? 0}
+                          onChange={e => setGovDraft({
+                            ...govDraft,
+                            fixedAndAssetRules: { ...govDraft.fixedAndAssetRules, annualMisc: Number(e.target.value) || 0 }
+                          })}
+                          placeholder="年度雜支 NT$"
+                          className="w-full rounded-xl border border-black/15 bg-white px-3 py-1.5 text-sm font-black"
+                        />
+                        <input
+                          type="text"
+                          value={activeGov.fixedAndAssetRules?.annualMiscNote || ''}
+                          onChange={e => setGovDraft({
+                            ...govDraft,
+                            fixedAndAssetRules: { ...govDraft.fixedAndAssetRules, annualMiscNote: e.target.value }
+                          })}
+                          placeholder="雜支備註說明"
+                          className="w-full rounded-xl border border-black/10 bg-white px-3 py-1.5 text-xs font-bold"
+                        />
+                      </div>
+                    ) : (
+                      <>
+                        <p className="text-xl font-black text-black">{formatMoney(Number(activeGov.fixedAndAssetRules?.annualMisc) || 0)}</p>
+                        <p className="text-xs font-bold text-slate-500">{activeGov.fixedAndAssetRules?.annualMiscNote}</p>
+                      </>
+                    )}
+                  </div>
+
+                  {/* 公司法定餘額 10% */}
+                  <div className="bg-emerald-50/80 rounded-2xl p-4 border border-emerald-200/80 shadow-sm space-y-1.5">
+                    <span className="text-xs font-black text-emerald-700 uppercase tracking-wider block">公司法定餘額 (盈餘公積)</span>
+                    {isEditingGov ? (
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-1">
+                          <input
+                            type="number"
+                            value={activeGov.fixedAndAssetRules?.legalReserveRate ?? 10}
+                            onChange={e => setGovDraft({
+                              ...govDraft,
+                              fixedAndAssetRules: { ...govDraft.fixedAndAssetRules, legalReserveRate: Number(e.target.value) || 0 }
+                            })}
+                            className="w-full rounded-xl border border-emerald-300 bg-white px-3 py-1.5 text-sm font-black"
+                          />
+                          <span className="font-black text-emerald-700">%</span>
+                        </div>
+                        <input
+                          type="text"
+                          value={activeGov.fixedAndAssetRules?.legalReserveNote || ''}
+                          onChange={e => setGovDraft({
+                            ...govDraft,
+                            fixedAndAssetRules: { ...govDraft.fixedAndAssetRules, legalReserveNote: e.target.value }
+                          })}
+                          className="w-full rounded-xl border border-emerald-200 bg-white px-3 py-1.5 text-xs font-bold"
+                        />
+                      </div>
+                    ) : (
+                      <>
+                        <p className="text-xl font-black text-emerald-700">{activeGov.fixedAndAssetRules?.legalReserveRate ?? 10}%</p>
+                        <p className="text-xs font-bold text-emerald-800/80">{activeGov.fixedAndAssetRules?.legalReserveNote}</p>
+                      </>
+                    )}
+                  </div>
+                </div>
+
+                {/* 公司資產分配說明 */}
+                <div className="bg-white/70 rounded-2xl p-4 sm:p-5 border border-black/5 shadow-sm space-y-2">
+                  <span className="text-xs font-black text-slate-400 uppercase tracking-wider block">公司資產分配與費用認列說明</span>
+                  {isEditingGov ? (
+                    <textarea
+                      value={activeGov.fixedAndAssetRules?.assetAllocationNote || ''}
+                      onChange={e => setGovDraft({
+                        ...govDraft,
+                        fixedAndAssetRules: { ...govDraft.fixedAndAssetRules, assetAllocationNote: e.target.value }
+                      })}
+                      placeholder="每行輸入一項資產分配或認列規則"
+                      className="w-full rounded-xl border border-black/10 bg-white p-3 text-xs font-bold h-24"
+                    />
+                  ) : (
+                    renderBulletLines(activeGov.fixedAndAssetRules?.assetAllocationNote)
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   const navigation = [
     { id: 'dashboard', name: '總覽', icon: LayoutDashboard },
     { id: 'projects', name: '案件', icon: Briefcase },
     { id: 'expenses', name: '報支', icon: Receipt },
     { id: 'assets', name: '資產', icon: Building2 },
     { id: 'financials', name: '財務', icon: PieChart },
+    { id: 'governance', name: '會議與制度', icon: FileText },
   ];
 
   if (!isAuthReady) {
@@ -2260,7 +3103,7 @@ export default function App() {
       </aside>
 
       {/* Mobile Bottom Navigation */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white/95 border-t border-slate-200 px-6 py-3 flex justify-between items-center z-50 shadow-lg">
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white/95 border-t border-slate-200 px-3 sm:px-6 py-2.5 flex justify-between items-center z-50 shadow-lg">
         {navigation.map((item) => {
           const Icon = item.icon;
           const isActive = activeTab === item.id;
@@ -2349,6 +3192,7 @@ export default function App() {
             {activeTab === 'expenses' && <ExpensesView />}
             {activeTab === 'assets' && <AssetsView />}
             {activeTab === 'financials' && <FinancialsView />}
+            {activeTab === 'governance' && <GovernanceView />}
           </div>
         </main>
       </div>
