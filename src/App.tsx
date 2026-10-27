@@ -310,9 +310,13 @@ export default function App() {
           const poolRate = p.implementationPoolRate !== undefined && p.implementationPoolRate !== '' ? Number(p.implementationPoolRate) : 30;
           let needsSync = false;
           const syncedImps: any = { ...p.implementers };
+          const totalProjScore = Object.keys(p.implementers).reduce((s, n) => s + (Number(p.implementers[n]?.score) || 0), 0);
           Object.keys(p.implementers).forEach(name => {
             const contrib = Number(p.implementers[name]?.contribution) || 0;
-            const expectedAmount = Math.round(net * (poolRate / 100) * (contrib / 100));
+            const pScore = Number(p.implementers[name]?.score) || 0;
+            const expectedAmount = totalProjScore > 0
+              ? Math.round(net * (poolRate / 100) * (pScore / totalProjScore))
+              : Math.round(net * (poolRate / 100) * (contrib / 100));
             if (Number(p.implementers[name]?.amount) !== expectedAmount) {
               syncedImps[name] = { ...p.implementers[name], contribution: contrib, amount: expectedAmount };
               needsSync = true;
@@ -455,7 +459,11 @@ export default function App() {
               const contrib = Number(p.implementers[name]?.contribution) || 0;
               const poolRate = p.implementationPoolRate !== undefined && p.implementationPoolRate !== '' ? Number(p.implementationPoolRate) : 30;
               const net = Number(p.netAmount) || 0;
-              implementationTotals[normName] += Math.round(net * (poolRate / 100) * (contrib / 100));
+              const totalProjScore = Object.keys(p.implementers).reduce((s, n) => s + (Number(p.implementers[n]?.score) || 0), 0);
+              const pScore = Number(p.implementers[name]?.score) || 0;
+              implementationTotals[normName] += totalProjScore > 0
+                ? Math.round(net * (poolRate / 100) * (pScore / totalProjScore))
+                : Math.round(net * (poolRate / 100) * (contrib / 100));
             }
           }
         });
@@ -522,6 +530,21 @@ export default function App() {
   const filteredExpenses = filterData(expenses);
   const filteredAssets = filterData(assets);
 
+  const defaultImplementationItems = [
+    { id: '1', name: '外出', ratio: 2, note: '現場場勘、取件與客戶端外勤作業' },
+    { id: '2', name: '掃描', ratio: 2, note: '3D 掃描作業與點雲資料擷取' },
+    { id: '3', name: '繪圖', ratio: 7, note: '2D/3D 工程圖面繪製與建模' },
+    { id: '4', name: '設計', ratio: 5, note: '產品機構設計、逆向曲面建構' },
+    { id: '5', name: '採購', ratio: 1, note: '耗材、外購件詢價與廠商發包聯繫' },
+    { id: '6', name: '實作', ratio: 3, note: '模型製作、打樣組裝與後處理' },
+    { id: '7', name: '專案討論', ratio: 2, note: '內部技術會議、客戶需求對焦討論' },
+    { id: '8', name: '修正作業', ratio: 2, note: '設變修改、公差調整與最終驗收修正' }
+  ];
+  const currentGovDoc = taxDeductions.find(t => t.values?.isGovernanceDoc === true);
+  const activeImplementationItems: any[] = Array.isArray(currentGovDoc?.values?.governance?.implementationItems) && currentGovDoc.values.governance.implementationItems.length > 0
+    ? currentGovDoc.values.governance.implementationItems
+    : defaultImplementationItems;
+
   // --- Modal 元件：案件編輯/新增 ---
   const ProjectModal = () => {
     const [client, setClient] = useState(editingProject?.client || '');
@@ -564,12 +587,33 @@ export default function App() {
       const net = Number(editingProject?.netAmount) || 0;
       const poolRate = editingProject?.implementationPoolRate !== undefined && editingProject?.implementationPoolRate !== '' ? Number(editingProject.implementationPoolRate) : 30;
       const initImps: any = {};
+      const hasSel = ['Tim', 'Chris', 'Sam'].some(n => Array.isArray(raw[n]?.selectedItems));
+      const scores: Record<string, number> = { Tim: 0, Chris: 0, Sam: 0 };
       ['Tim', 'Chris', 'Sam'].forEach(name => {
-        const contrib = Number(raw[name]?.contribution) || 0;
-        initImps[name] = {
-          contribution: contrib,
-          amount: contrib > 0 ? Math.round(net * (poolRate / 100) * (contrib / 100)) : (Number(raw[name]?.amount) || 0)
-        };
+        const sel: string[] = Array.isArray(raw[name]?.selectedItems) ? raw[name].selectedItems : [];
+        scores[name] = sel.reduce((sum, itemId) => {
+          const found = activeImplementationItems.find((it: any) => String(it.id) === String(itemId) || it.name === itemId);
+          return sum + (Number(found?.ratio) || 0);
+        }, 0);
+      });
+      const totalScore = scores.Tim + scores.Chris + scores.Sam;
+      ['Tim', 'Chris', 'Sam'].forEach(name => {
+        if (hasSel) {
+          const pScore = scores[name];
+          const contrib = totalScore > 0 ? Math.round((pScore / totalScore) * 1000) / 10 : 0;
+          initImps[name] = {
+            selectedItems: Array.isArray(raw[name]?.selectedItems) ? raw[name].selectedItems : [],
+            score: pScore,
+            contribution: contrib,
+            amount: totalScore > 0 ? Math.round(net * (poolRate / 100) * (pScore / totalScore)) : 0
+          };
+        } else {
+          const contrib = Number(raw[name]?.contribution) || 0;
+          initImps[name] = {
+            contribution: contrib,
+            amount: contrib > 0 ? Math.round(net * (poolRate / 100) * (contrib / 100)) : (Number(raw[name]?.amount) || 0)
+          };
+        }
       });
       return initImps;
     });
@@ -632,8 +676,44 @@ export default function App() {
       Object.keys(imps).forEach(name => {
         const contrib = Number(imps[name]?.contribution) || 0;
         newImps[name] = {
-          contribution: contrib,
-          amount: Math.round(net * (poolRate / 100) * (contrib / 100))
+          contribution: (() => {
+            const hasSel = ['Tim', 'Chris', 'Sam'].some(n => Array.isArray(imps[n]?.selectedItems));
+            if (!hasSel) return contrib;
+            const scores: Record<string, number> = { Tim: 0, Chris: 0, Sam: 0 };
+            ['Tim', 'Chris', 'Sam'].forEach(n => {
+              const sel: string[] = Array.isArray(imps[n]?.selectedItems) ? imps[n].selectedItems : [];
+              scores[n] = sel.reduce((sum, itemId) => {
+                const found = activeImplementationItems.find((it: any) => String(it.id) === String(itemId) || it.name === itemId);
+                return sum + (Number(found?.ratio) || 0);
+              }, 0);
+            });
+            const totalScore = scores.Tim + scores.Chris + scores.Sam;
+            const pScore = scores[name] || 0;
+            return totalScore > 0 ? Math.round((pScore / totalScore) * 1000) / 10 : 0;
+          })(),
+          amount: (() => {
+            const hasSel = ['Tim', 'Chris', 'Sam'].some(n => Array.isArray(imps[n]?.selectedItems));
+            if (!hasSel) return Math.round(net * (poolRate / 100) * (contrib / 100));
+            const scores: Record<string, number> = { Tim: 0, Chris: 0, Sam: 0 };
+            ['Tim', 'Chris', 'Sam'].forEach(n => {
+              const sel: string[] = Array.isArray(imps[n]?.selectedItems) ? imps[n].selectedItems : [];
+              scores[n] = sel.reduce((sum, itemId) => {
+                const found = activeImplementationItems.find((it: any) => String(it.id) === String(itemId) || it.name === itemId);
+                return sum + (Number(found?.ratio) || 0);
+              }, 0);
+            });
+            const totalScore = scores.Tim + scores.Chris + scores.Sam;
+            const pScore = scores[name] || 0;
+            return totalScore > 0 ? Math.round(net * (poolRate / 100) * (pScore / totalScore)) : 0;
+          })(),
+          score: (() => {
+            if (!Array.isArray(imps[name]?.selectedItems)) return imps[name]?.score;
+            return imps[name].selectedItems.reduce((sum: number, itemId: string) => {
+              const found = activeImplementationItems.find((it: any) => String(it.id) === String(itemId) || it.name === itemId);
+              return sum + (Number(found?.ratio) || 0);
+            }, 0);
+          })(),
+          selectedItems: imps[name]?.selectedItems
         };
       });
       return newImps;
@@ -694,6 +774,20 @@ export default function App() {
     const handleNewClientBonusRateChange = (val: string) => {
       setNewClientBonusRate(val);
       setImplementers(recalculateImplementers(netAmount, outsourcedItems, implementationPoolRate, implementers, salesRep, isNewClient, baseBonusRate, val));
+    };
+
+    const handleToggleImplementerItem = (name: string, itemId: string) => {
+      const nextImps: any = {};
+      ['Tim', 'Chris', 'Sam'].forEach(n => {
+        const currentSelected: string[] = Array.isArray(implementers[n]?.selectedItems) ? implementers[n].selectedItems : [];
+        nextImps[n] = {
+          ...implementers[n],
+          selectedItems: n === name
+            ? (currentSelected.includes(itemId) ? currentSelected.filter(id => id !== itemId) : [...currentSelected, itemId])
+            : currentSelected
+        };
+      });
+      setImplementers(recalculateImplementers(netAmount, outsourcedItems, implementationPoolRate, nextImps));
     };
 
     const handleContributionChange = (name: string, val: number) => {
@@ -933,7 +1027,7 @@ export default function App() {
             <div className="border-t border-black/5 pt-5">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-3 gap-2">
                 <label className="block text-sm font-bold text-slate-700">
-                  實作人員與貢獻 (未稅金額 {implementationPoolRate}% 獎金池：{formatMoney(Math.round((Number(netAmount) || 0) * (implementationPoolRate / 100)))})
+                  實作人員與貢獻 (未稅 {implementationPoolRate}% 獎金池：{formatMoney(Math.round((Number(netAmount) || 0) * (implementationPoolRate / 100)))} • 專案總分：{['Tim', 'Chris', 'Sam'].reduce((s, n) => s + (Number(implementers[n]?.score) || 0), 0)} 分)
                 </label>
                 <div className="grid grid-cols-3 sm:flex bg-white/60 p-1 rounded-xl border border-black/10 text-xs font-bold w-full sm:w-auto shadow-sm">
                   <button 
@@ -961,7 +1055,35 @@ export default function App() {
               </div>
               <div className="space-y-3">
                 {['Tim', 'Chris', 'Sam'].map(name => (
-                  <div key={name} className="grid grid-cols-12 gap-2 sm:gap-4 items-center bg-white/40 sm:bg-transparent p-2.5 sm:p-0 rounded-2xl border border-black/5 sm:border-none">
+                  <div key={name} className="bg-white/50 p-3 sm:p-4 rounded-2xl border border-black/5 space-y-2.5 shadow-sm">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-black text-slate-800 text-sm sm:text-base">{name}</span>
+                        <span className={`px-2.5 py-0.5 rounded-full text-xs font-black ${(Number(implementers[name]?.score) || 0) > 0 || (Number(implementers[name]?.contribution) || 0) > 0 ? 'bg-black text-white' : 'bg-slate-200 text-slate-600'}`}>
+                          {Number(implementers[name]?.score) || 0} / {['Tim', 'Chris', 'Sam'].reduce((s, n) => s + (Number(implementers[n]?.score) || 0), 0)} 分 ({implementers[name]?.contribution || 0}%)
+                        </span>
+                      </div>
+                      <div className="font-black text-black text-sm sm:text-base shrink-0">
+                        {formatMoney(implementers[name]?.amount || 0)}
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {activeImplementationItems.map((item: any) => {
+                        const selList: string[] = Array.isArray(implementers[name]?.selectedItems) ? implementers[name].selectedItems : [];
+                        const isSelected = selList.includes(String(item.id)) || selList.includes(item.name);
+                        return (
+                          <button
+                            key={item.id}
+                            type="button"
+                            onClick={() => handleToggleImplementerItem(name, String(item.id))}
+                            className={`px-2.5 py-1.5 rounded-xl text-xs font-bold border transition-colors ${isSelected ? 'bg-black text-white border-black shadow-sm' : 'bg-white/80 text-slate-600 border-black/10 hover:bg-white hover:text-black'}`}
+                          >
+                            {item.name} ({item.ratio}分)
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <div className="hidden">
                     <div className="col-span-3 sm:col-span-4 font-bold text-slate-700 text-sm sm:text-base">{name}</div>
                     <div className="col-span-5 sm:col-span-4 flex items-center space-x-1.5 min-w-0">
                       <input 
@@ -974,7 +1096,7 @@ export default function App() {
                       <span className="font-bold text-slate-400 text-xs sm:text-sm">%</span>
                     </div>
                     <div className="col-span-4 sm:col-span-4 text-right font-black text-black text-sm truncate">
-                      {formatMoney(implementers[name].amount)}
+                      {formatMoney(implementers[name].amount)}</div>
                     </div>
                   </div>
                 ))}
@@ -2167,16 +2289,7 @@ export default function App() {
         newClientBonusRate: 15,
         salesBonusNote: '舊客成交抽成未稅金額 5%；新客成交加碼 10%（合計抽成未稅金額 15%），由該案業務獲得並自專案實收淨利中扣除。'
       },
-      implementationItems: [
-        { id: '1', name: '外出', ratio: 10, note: '現場場勘、取件與客戶端外勤作業' },
-        { id: '2', name: '掃描', ratio: 15, note: '3D 掃描作業與點雲資料擷取' },
-        { id: '3', name: '繪圖', ratio: 15, note: '2D/3D 工程圖面繪製與建模' },
-        { id: '4', name: '設計', ratio: 20, note: '產品機構設計、逆向曲面建構' },
-        { id: '5', name: '採購', ratio: 5, note: '耗材、外購件詢價與廠商發包聯繫' },
-        { id: '6', name: '實作', ratio: 15, note: '模型製作、打樣組裝與後處理' },
-        { id: '7', name: '專案討論', ratio: 10, note: '內部技術會議、客戶需求對焦討論' },
-        { id: '8', name: '修正作業', ratio: 10, note: '設變修改、公差調整與最終驗收修正' }
-      ],
+      implementationItems: defaultImplementationItems,
       fixedAndAssetRules: {
         annualRent: 0,
         annualRentNote: '依實際租約按月/按年提列',
@@ -2765,10 +2878,10 @@ export default function App() {
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="flex flex-wrap items-center gap-2">
                     <h4 className="text-base font-black text-black flex items-center gap-2">
-                      <Briefcase size={18} /> 實作各項占比基準（八大基本項目，可擴充）
+                      <Briefcase size={18} /> 實作各項配分基準（八大基本項目，可調整與擴充）
                     </h4>
-                    <span className={`px-2.5 py-0.5 rounded-full text-xs font-black ${totalImpRatio === 100 ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>
-                      各項占比合計：{totalImpRatio}%
+                    <span className="px-2.5 py-0.5 rounded-full text-xs font-black bg-slate-200 text-slate-800">
+                      各項基準總分：{totalImpRatio} 分
                     </span>
                   </div>
                   {isEditingGov && (
@@ -2807,14 +2920,14 @@ export default function App() {
                             </button>
                           </div>
                           <div className="flex items-center gap-1.5">
-                            <span className="text-xs font-bold text-slate-500">占比：</span>
+                            <span className="text-xs font-bold text-slate-500">分數：</span>
                             <input
                               type="number"
                               value={item.ratio}
                               onChange={e => handleUpdateImpItem(item.id, 'ratio', Number(e.target.value) || 0)}
                               className="w-20 rounded-lg border border-black/15 bg-white px-2 py-1 text-xs font-black text-right"
                             />
-                            <span className="text-xs font-black text-slate-500">%</span>
+                            <span className="text-xs font-black text-slate-500">分</span>
                           </div>
                           <input
                             type="text"
@@ -2834,7 +2947,7 @@ export default function App() {
                               <span className="font-black text-sm text-black truncate">{item.name}</span>
                             </div>
                             <span className="px-2.5 py-1 rounded-xl bg-slate-900 text-white font-black text-xs shrink-0">
-                              {item.ratio}%
+                              {item.ratio} 分
                             </span>
                           </div>
                           <p className="text-xs font-bold text-slate-500 leading-relaxed">{item.note || '-'}</p>
